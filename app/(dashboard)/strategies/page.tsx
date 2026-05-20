@@ -275,7 +275,16 @@ export default function StrategiesPage() {
           }
         />
         <div className="overflow-x-auto border border-zinc-200 bg-white">
-          <table className="min-w-[1100px] w-full border-collapse text-left text-sm">
+          <table className="min-w-[1100px] w-full table-fixed border-collapse text-left text-sm">
+            <colgroup>
+              <col className="w-[240px]" />
+              <col className="w-[220px]" />
+              <col />
+              <col className="w-[160px]" />
+              <col />
+              <col className="w-[90px]" />
+              <col className="w-10" />
+            </colgroup>
             <thead>
               <tr className="border-b border-zinc-200">
                 {tableHeadings.map((heading, index) => (

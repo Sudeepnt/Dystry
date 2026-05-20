@@ -236,7 +236,7 @@ export default function AtomicProcessesPage() {
         <div className="overflow-x-auto border border-zinc-200 bg-white">
           <table className="min-w-[1304px] w-full table-fixed border-collapse text-left text-sm">
             <colgroup>
-              <col className="w-[120px]" />
+              <col className="w-[220px]" />
               <col className="w-[260px]" />
               <col className="w-[96px]" />
               <col className="w-[96px]" />

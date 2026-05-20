@@ -2,6 +2,9 @@
 
 import clsx from "clsx";
 import { Check, ChevronDown, X } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import type { CSSProperties } from "react";
 
 export function Button({
   children,
@@ -88,10 +91,89 @@ export function MultiSelect({
   onChange: (selected: string[]) => void;
   className?: string;
 }) {
+  const id = useId();
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
   const selectedSet = new Set(selected);
   const selectedLabels = options
     .filter((option) => selectedSet.has(option.id))
     .map((option) => option.label);
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as Node;
+      if (!containerRef.current?.contains(target) && !menuRef.current?.contains(target)) {
+        setOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    function handlePeerOpen(event: Event) {
+      const peerId = (event as CustomEvent<string>).detail;
+      if (peerId !== id) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("dystry:multi-select-open", handlePeerOpen);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("dystry:multi-select-open", handlePeerOpen);
+    };
+  }, [id]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function updateMenuPosition() {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const menuWidth = Math.max(rect.width, 288);
+      const viewportPadding = 12;
+      const left = Math.min(
+        Math.max(viewportPadding, rect.left),
+        window.innerWidth - menuWidth - viewportPadding,
+      );
+
+      setMenuStyle({
+        left,
+        top: rect.bottom + 4,
+        width: menuWidth,
+      });
+    }
+
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [open, selectedLabels.length]);
+
+  function toggleOpen() {
+    setOpen((current) => {
+      const nextOpen = !current;
+      if (nextOpen) {
+        window.dispatchEvent(new CustomEvent("dystry:multi-select-open", { detail: id }));
+      }
+      return nextOpen;
+    });
+  }
 
   function toggle(optionId: string) {
     onChange(
@@ -102,32 +184,53 @@ export function MultiSelect({
   }
 
   return (
-    <details className={clsx("group relative", className)}>
-      <summary className="flex min-h-12 cursor-pointer list-none items-start justify-between gap-2 bg-white px-3 py-2 text-left text-sm text-zinc-800 outline-none transition focus:bg-zinc-50 [&::-webkit-details-marker]:hidden">
-        <span className={clsx("max-h-[60px] overflow-hidden leading-5", !selectedLabels.length && "text-zinc-400")}>
-          {selectedLabels.length ? selectedLabels.join(", ") : label}
+    <div ref={containerRef} className={clsx("relative", className)}>
+      <button
+        ref={buttonRef}
+        type="button"
+        className="flex min-h-12 w-full cursor-pointer items-start justify-between gap-2 bg-white px-3 py-2 text-left text-sm text-zinc-800 outline-none transition focus:bg-zinc-50"
+        aria-expanded={open}
+        onClick={toggleOpen}
+      >
+        <span className={clsx("grid max-h-32 gap-1 overflow-hidden leading-5", !selectedLabels.length && "text-zinc-400")}>
+          {selectedLabels.length
+            ? selectedLabels.map((selectedLabel) => <span key={selectedLabel}>{selectedLabel}</span>)
+            : label}
         </span>
-        <ChevronDown className="mt-0.5 shrink-0 text-zinc-400 transition group-open:rotate-180" size={14} />
-      </summary>
-      <div className="absolute left-0 top-full z-20 mt-1 max-h-72 w-72 overflow-y-auto border border-zinc-200 bg-white shadow-sm">
-        {options.map((option) => {
-          const checked = selectedSet.has(option.id);
-          return (
-            <button
-              key={option.id}
-              type="button"
-              className="flex w-full items-start gap-2 border-b border-zinc-100 px-3 py-2 text-left text-sm text-zinc-700 transition last:border-b-0 hover:bg-zinc-50 hover:text-black"
-              onClick={() => toggle(option.id)}
+        <ChevronDown className={clsx("mt-0.5 shrink-0 text-zinc-400 transition", open && "rotate-180")} size={14} />
+      </button>
+      {open
+        ? createPortal(
+            <div
+              ref={menuRef}
+              className="fixed z-[100] max-h-72 overflow-y-auto border border-zinc-200 bg-white shadow-sm"
+              style={menuStyle}
             >
-              <span className={clsx("mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center border", checked ? "border-black bg-black text-white" : "border-zinc-300")}>
-                {checked ? <Check size={12} /> : null}
-              </span>
-              <span className="leading-5">{option.label}</span>
-            </button>
-          );
-        })}
-      </div>
-    </details>
+              {options.length ? (
+                options.map((option) => {
+                  const checked = selectedSet.has(option.id);
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className="flex w-full items-start gap-2 border-b border-zinc-100 px-3 py-2 text-left text-sm text-zinc-700 transition last:border-b-0 hover:bg-zinc-50 hover:text-black"
+                      onClick={() => toggle(option.id)}
+                    >
+                      <span className={clsx("mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center border", checked ? "border-black bg-black text-white" : "border-zinc-300")}>
+                        {checked ? <Check size={12} /> : null}
+                      </span>
+                      <span className="leading-5">{option.label}</span>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="px-3 py-2 text-sm text-zinc-400">No business models</div>
+              )}
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
   );
 }
 
