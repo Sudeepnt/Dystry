@@ -143,14 +143,20 @@ export function MultiSelect({
 
       const menuWidth = Math.max(rect.width, 288);
       const viewportPadding = 12;
+      const maxMenuHeight = 288;
+      const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+      const spaceAbove = rect.top - viewportPadding;
+      const openAbove = spaceBelow < 180 && spaceAbove > spaceBelow;
+      const availableHeight = Math.max(96, Math.min(maxMenuHeight, openAbove ? spaceAbove - 4 : spaceBelow - 4));
       const left = Math.min(
         Math.max(viewportPadding, rect.left),
         window.innerWidth - menuWidth - viewportPadding,
       );
 
       setMenuStyle({
+        maxHeight: availableHeight,
         left,
-        top: rect.bottom + 4,
+        top: openAbove ? rect.top - availableHeight - 4 : rect.bottom + 4,
         width: menuWidth,
       });
     }
@@ -192,9 +198,9 @@ export function MultiSelect({
         aria-expanded={open}
         onClick={toggleOpen}
       >
-        <span className={clsx("grid max-h-32 gap-1 overflow-hidden leading-5", !selectedLabels.length && "text-zinc-400")}>
+        <span className={clsx("grid max-h-32 min-w-0 gap-1 overflow-y-auto pr-1 leading-5", !selectedLabels.length && "text-zinc-400")}>
           {selectedLabels.length
-            ? selectedLabels.map((selectedLabel) => <span key={selectedLabel}>{selectedLabel}</span>)
+            ? selectedLabels.map((selectedLabel) => <span key={selectedLabel} className="break-words">{selectedLabel}</span>)
             : label}
         </span>
         <ChevronDown className={clsx("mt-0.5 shrink-0 text-zinc-400 transition", open && "rotate-180")} size={14} />
@@ -203,7 +209,7 @@ export function MultiSelect({
         ? createPortal(
             <div
               ref={menuRef}
-              className="fixed z-[100] max-h-72 overflow-y-auto border border-zinc-200 bg-white shadow-sm"
+              className="fixed z-[100] overflow-y-auto border border-zinc-200 bg-white shadow-sm"
               style={menuStyle}
             >
               {options.length ? (
