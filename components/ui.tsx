@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { X } from "lucide-react";
+import { Check, ChevronDown, X } from "lucide-react";
 
 export function Button({
   children,
@@ -72,6 +72,62 @@ export function Select({ className, ...props }: React.SelectHTMLAttributes<HTMLS
       )}
       {...props}
     />
+  );
+}
+
+export function MultiSelect({
+  label,
+  options,
+  selected,
+  onChange,
+  className,
+}: {
+  label: string;
+  options: Array<{ id: string; label: string }>;
+  selected: string[];
+  onChange: (selected: string[]) => void;
+  className?: string;
+}) {
+  const selectedSet = new Set(selected);
+  const selectedLabels = options
+    .filter((option) => selectedSet.has(option.id))
+    .map((option) => option.label);
+
+  function toggle(optionId: string) {
+    onChange(
+      selectedSet.has(optionId)
+        ? selected.filter((selectedId) => selectedId !== optionId)
+        : [...selected, optionId],
+    );
+  }
+
+  return (
+    <details className={clsx("group relative", className)}>
+      <summary className="flex min-h-12 cursor-pointer list-none items-start justify-between gap-2 bg-white px-3 py-2 text-left text-sm text-zinc-800 outline-none transition focus:bg-zinc-50 [&::-webkit-details-marker]:hidden">
+        <span className={clsx("max-h-[60px] overflow-hidden leading-5", !selectedLabels.length && "text-zinc-400")}>
+          {selectedLabels.length ? selectedLabels.join(", ") : label}
+        </span>
+        <ChevronDown className="mt-0.5 shrink-0 text-zinc-400 transition group-open:rotate-180" size={14} />
+      </summary>
+      <div className="absolute left-0 top-full z-20 mt-1 max-h-72 w-72 overflow-y-auto border border-zinc-200 bg-white shadow-sm">
+        {options.map((option) => {
+          const checked = selectedSet.has(option.id);
+          return (
+            <button
+              key={option.id}
+              type="button"
+              className="flex w-full items-start gap-2 border-b border-zinc-100 px-3 py-2 text-left text-sm text-zinc-700 transition last:border-b-0 hover:bg-zinc-50 hover:text-black"
+              onClick={() => toggle(option.id)}
+            >
+              <span className={clsx("mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center border", checked ? "border-black bg-black text-white" : "border-zinc-300")}>
+                {checked ? <Check size={12} /> : null}
+              </span>
+              <span className="leading-5">{option.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </details>
   );
 }
 

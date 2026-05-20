@@ -5,7 +5,7 @@ import { Heart, Plus, Search, Trash2 } from "lucide-react";
 import { listAtomicProcesses, listBusinessModels, relationTitles } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import type { AtomicProcess, BusinessModel } from "@/lib/types";
-import { Button, EmptyState, ErrorState, Input, Pill, SectionHeader, Select } from "@/components/ui";
+import { Button, EmptyState, ErrorState, Input, MultiSelect, Pill, SectionHeader, Select } from "@/components/ui";
 
 type AtomicRatings = {
   pain_frequency: number;
@@ -129,6 +129,7 @@ export default function AtomicProcessesPage() {
     setCustomRows((currentRows) => [
       {
         id: `custom:${Date.now()}`,
+        linkedModelIds: [],
         businessModel: "",
         productBrief: "",
         input: "",
@@ -160,6 +161,17 @@ export default function AtomicProcessesPage() {
     const nextRows = customRows.map((row) => (row.id === rowId ? update(row) : row));
     setCustomRows(nextRows);
     persistCustomRows(nextRows);
+  }
+
+  function updateCustomRowModels(rowId: string, modelIds: string[]) {
+    const modelTitles = models
+      .filter((model) => modelIds.includes(model.id))
+      .map((model) => model.title);
+    updateCustomRow(rowId, (current) => ({
+      ...current,
+      linkedModelIds: modelIds,
+      businessModel: modelTitles.join(", "),
+    }));
   }
 
   function deleteCustomRow(rowId: string) {
@@ -260,19 +272,12 @@ export default function AtomicProcessesPage() {
                 <tr key={row.id} className="group border-b border-zinc-100 last:border-b-0">
                   <td className="border-r border-zinc-100 p-0 align-top">
                     {row.custom ? (
-                      <select
-                        aria-label="Business model"
-                        className="min-h-20 w-full bg-white px-3 py-2 text-sm text-zinc-800 outline-none transition focus:bg-zinc-50"
-                        value={row.businessModel}
-                        onChange={(event) => updateCustomRow(row.id, (current) => ({ ...current, businessModel: event.target.value }))}
-                      >
-                        <option value="">Select</option>
-                        {models.map((model) => (
-                          <option key={model.id} value={model.title}>
-                            {model.title}
-                          </option>
-                        ))}
-                      </select>
+                      <MultiSelect
+                        label="Select business models"
+                        options={models.map((model) => ({ id: model.id, label: model.title }))}
+                        selected={row.linkedModelIds?.length ? row.linkedModelIds : idsFromTitles(row.businessModel, models)}
+                        onChange={(modelIds) => updateCustomRowModels(row.id, modelIds)}
+                      />
                     ) : (
                       <div className="p-3 text-zinc-800">{row.businessModel}</div>
                     )}
@@ -397,9 +402,11 @@ function normalizeRatings(value: unknown): AtomicRatings {
 }
 
 function normalizeCustomRow(row: Partial<AtomicTableRow>): AtomicTableRow {
+  const businessModel = String(row.businessModel ?? "");
   return {
     id: row.id || `custom:${Date.now()}`,
-    businessModel: String(row.businessModel ?? ""),
+    linkedModelIds: Array.isArray(row.linkedModelIds) ? row.linkedModelIds.map(String) : [],
+    businessModel,
     productBrief: String(row.productBrief ?? ""),
     input: String(row.input ?? ""),
     action: String(row.action ?? ""),
@@ -408,6 +415,13 @@ function normalizeCustomRow(row: Partial<AtomicTableRow>): AtomicTableRow {
     shortlisted: Boolean(row.shortlisted),
     custom: true,
   };
+}
+
+function idsFromTitles(value: string, models: BusinessModel[]) {
+  const selectedTitles = value.split(",").map((title) => title.trim()).filter(Boolean);
+  return models
+    .filter((model) => selectedTitles.includes(model.title))
+    .map((model) => model.id);
 }
 
 function persistCustomRows(rows: AtomicTableRow[]) {

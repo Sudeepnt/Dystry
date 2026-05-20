@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, Trash2 } from "lucide-react";
 import { listAtomicProcesses, listBusinessModels, listStrategies } from "@/lib/data";
 import type { AtomicProcess, BusinessModel, Strategy } from "@/lib/types";
-import { Button, EmptyState, ErrorState, Input, Pill, SectionHeader, Select } from "@/components/ui";
+import { Button, EmptyState, ErrorState, Input, MultiSelect, Pill, SectionHeader, Select } from "@/components/ui";
 
 type MatrixRow = {
   id: string;
+  businessModelIds?: string[];
   businessModel: string;
   strategy: string;
   process: string;
@@ -143,17 +144,17 @@ export default function StrategiesPage() {
 
   const tableRows = useMemo(() => {
     const sourceRows: MatrixRow[] = filtered.flatMap((strategy) => {
-      const linkedModels = strategy.strategy_business_models
-        ?.map((relation) => relation.business_models?.title)
-        .filter(Boolean) as string[] | undefined;
+      const linkedModels = strategy.strategy_business_models?.filter((relation) => relation.business_models?.title) ?? [];
       const relatedProcesses = processes
         .filter((process) => process.related_strategy_id === strategy.id)
         .map((process) => process.title);
 
-      return (linkedModels?.length ? linkedModels : ["All / TBD"]).map((modelTitle) => {
+      return (linkedModels.length ? linkedModels : [{ business_model_id: "", business_models: { title: "All / TBD" } }]).map((relation) => {
+        const modelTitle = relation.business_models?.title ?? "All / TBD";
         const id = `source:${strategy.id}:${modelTitle}`;
         return {
           id,
+          businessModelIds: relation.business_model_id ? [relation.business_model_id] : [],
           businessModel: modelTitle,
           strategy: strategy.title,
           process: relatedProcesses.length ? relatedProcesses.join(", ") : "Unmapped",
@@ -169,7 +170,10 @@ export default function StrategiesPage() {
       const matchesSearch =
         !query ||
         [row.businessModel, row.strategy, row.process, row.channels, row.output, row.rate].join(" ").toLowerCase().includes(query);
-      const matchesFilter = filter === "all" || row.businessModel === models.find((model) => model.id === filter)?.title;
+      const matchesFilter =
+        filter === "all" ||
+        row.businessModelIds?.includes(filter) ||
+        row.businessModel === models.find((model) => model.id === filter)?.title;
       return matchesSearch && matchesFilter;
     });
 
@@ -188,6 +192,7 @@ export default function StrategiesPage() {
     const nextRows = [
       {
         id: `custom:${Date.now()}`,
+        businessModelIds: [],
         businessModel: "",
         strategy: "",
         process: "",
@@ -203,6 +208,17 @@ export default function StrategiesPage() {
 
   function updateCustomRow(rowId: string, field: keyof MatrixRow, value: string) {
     const nextRows = customRows.map((row) => (row.id === rowId ? { ...row, [field]: field === "rate" ? normalizeRate(value) : value } : row));
+    setCustomRows(nextRows);
+    persistCustomRows(nextRows);
+  }
+
+  function updateCustomRowModels(rowId: string, modelIds: string[]) {
+    const modelTitles = models
+      .filter((model) => modelIds.includes(model.id))
+      .map((model) => model.title);
+    const nextRows = customRows.map((row) =>
+      row.id === rowId ? { ...row, businessModelIds: modelIds, businessModel: modelTitles.join(", ") } : row,
+    );
     setCustomRows(nextRows);
     persistCustomRows(nextRows);
   }
@@ -281,19 +297,12 @@ export default function StrategiesPage() {
                   {rowFields.map((field) => (
                     <td key={field} className="border-r border-zinc-100 p-0 align-top last:border-r-0">
                       {row.custom && field === "businessModel" ? (
-                        <select
-                          aria-label="Business model"
-                          className="min-h-12 w-full bg-white px-3 py-2 text-sm text-zinc-800 outline-none transition focus:bg-zinc-50"
-                          value={row.businessModel}
-                          onChange={(event) => updateCustomRow(row.id, field, event.target.value)}
-                        >
-                          <option value="">Select business model</option>
-                          {models.map((model) => (
-                            <option key={model.id} value={model.title}>
-                              {model.title}
-                            </option>
-                          ))}
-                        </select>
+                        <MultiSelect
+                          label="Select business models"
+                          options={models.map((model) => ({ id: model.id, label: model.title }))}
+                          selected={row.businessModelIds ?? idsFromTitles(row.businessModel, models)}
+                          onChange={(modelIds) => updateCustomRowModels(row.id, modelIds)}
+                        />
 	                      ) : row.custom && field === "rate" ? (
 	                        <Select
 	                          aria-label={tableHeadings[rowFields.indexOf(field)]}
@@ -381,9 +390,11 @@ function resizeTextarea(element: HTMLTextAreaElement | null) {
 }
 
 function normalizeCustomRow(row: Partial<MatrixRow>): MatrixRow {
+  const businessModel = String(row.businessModel ?? "");
   return {
     id: row.id || `custom:${Date.now()}`,
-    businessModel: String(row.businessModel ?? ""),
+    businessModelIds: Array.isArray(row.businessModelIds) ? row.businessModelIds.map(String) : [],
+    businessModel,
     strategy: String(row.strategy ?? ""),
     process: String(row.process ?? ""),
     channels: String(row.channels ?? ""),
@@ -391,4 +402,11 @@ function normalizeCustomRow(row: Partial<MatrixRow>): MatrixRow {
     rate: normalizeRate(String(row.rate ?? "")),
     custom: true,
   };
+}
+
+function idsFromTitles(value: string, models: BusinessModel[]) {
+  const selectedTitles = value.split(",").map((title) => title.trim()).filter(Boolean);
+  return models
+    .filter((model) => selectedTitles.includes(model.title))
+    .map((model) => model.id);
 }
