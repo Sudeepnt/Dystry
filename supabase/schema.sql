@@ -82,3 +82,76 @@ create table if not exists atomic_process_business_models (
 grant usage on schema public to anon, authenticated;
 grant all on all tables in schema public to anon, authenticated;
 grant all on all sequences in schema public to anon, authenticated;
+
+alter table overview_subproblems enable row level security;
+alter table research_sources enable row level security;
+alter table business_models enable row level security;
+alter table business_model_types enable row level security;
+alter table strategies enable row level security;
+alter table strategy_business_models enable row level security;
+alter table atomic_processes enable row level security;
+alter table atomic_process_business_models enable row level security;
+
+drop policy if exists "public full access" on overview_subproblems;
+create policy "public full access"
+on overview_subproblems
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists "public full access" on research_sources;
+create policy "public full access"
+on research_sources
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists "public full access" on business_models;
+create policy "public full access"
+on business_models
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists "public full access" on business_model_types;
+create policy "public full access"
+on business_model_types
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists "public full access" on strategies;
+create policy "public full access"
+on strategies
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists "public full access" on strategy_business_models;
+create policy "public full access"
+on strategy_business_models
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists "public full access" on atomic_processes;
+create policy "public full access"
+on atomic_processes
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists "public full access" on atomic_process_business_models;
+create policy "public full access"
+on atomic_process_business_models
+for all
+to anon, authenticated
+using (true)
+with check (true);
