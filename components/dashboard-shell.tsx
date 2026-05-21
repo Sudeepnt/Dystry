@@ -111,8 +111,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
   return (
     <main className="min-h-screen bg-white text-zinc-900">
-      <div className="mx-auto max-w-[1500px] px-6 py-5">
-        <header className="border-b border-zinc-200 pb-4">
+      <div className="mx-auto max-w-[1500px] px-6">
+        <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white pb-4 pt-5">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <div className="text-3xl font-semibold tracking-tight text-black">DYSTRY</div>

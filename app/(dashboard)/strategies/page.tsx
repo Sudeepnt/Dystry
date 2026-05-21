@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, Trash2 } from "lucide-react";
 import { listAtomicProcesses, listBusinessModels, listStrategies } from "@/lib/data";
+import { supabase } from "@/lib/supabase";
 import type { AtomicProcess, BusinessModel, Strategy } from "@/lib/types";
 import { Button, EmptyState, ErrorState, Input, MultiSelect, Pill, SectionHeader, Select } from "@/components/ui";
 
 type MatrixRow = {
   id: string;
+  strategyId?: string;
   businessModelIds?: string[];
   businessModel: string;
   strategy: string;
@@ -143,26 +145,26 @@ export default function StrategiesPage() {
   }, [filter, search, strategies]);
 
   const tableRows = useMemo(() => {
-    const sourceRows: MatrixRow[] = filtered.flatMap((strategy) => {
+    const sourceRows: MatrixRow[] = filtered.map((strategy) => {
       const linkedModels = strategy.strategy_business_models?.filter((relation) => relation.business_models?.title) ?? [];
+      const linkedModelIds = linkedModels.map((relation) => relation.business_model_id);
+      const linkedModelTitles = linkedModels.map((relation) => relation.business_models?.title).filter(Boolean) as string[];
       const relatedProcesses = processes
         .filter((process) => process.related_strategy_id === strategy.id)
         .map((process) => process.title);
+      const id = `source:${strategy.id}`;
 
-      return (linkedModels.length ? linkedModels : [{ business_model_id: "", business_models: { title: "All / TBD" } }]).map((relation) => {
-        const modelTitle = relation.business_models?.title ?? "All / TBD";
-        const id = `source:${strategy.id}:${modelTitle}`;
-        return {
-          id,
-          businessModelIds: relation.business_model_id ? [relation.business_model_id] : [],
-          businessModel: modelTitle,
-          strategy: strategy.title,
-          process: relatedProcesses.length ? relatedProcesses.join(", ") : "Unmapped",
-          channels: strategy.channel_mechanism || strategy.strategy_category || "Not documented",
-          output: strategy.primary_metric || strategy.landmark_example || "Not documented",
-          rate: rowRatings[id] ?? "",
-        };
-      });
+      return {
+        id,
+        strategyId: strategy.id,
+        businessModelIds: linkedModelIds,
+        businessModel: linkedModelTitles.length ? linkedModelTitles.join(", ") : "All / TBD",
+        strategy: strategy.title,
+        process: relatedProcesses.length ? relatedProcesses.join(", ") : "Unmapped",
+        channels: strategy.channel_mechanism || strategy.strategy_category || "Not documented",
+        output: strategy.primary_metric || strategy.landmark_example || "Not documented",
+        rate: rowRatings[id] ?? "",
+      };
     });
 
     const visibleCustomRows = customRows.filter((row) => {
@@ -179,7 +181,10 @@ export default function StrategiesPage() {
 
     return [...sourceRows, ...visibleCustomRows]
       .filter((row) => !hiddenRows.includes(row.id))
-      .sort((left, right) => Number(right.rate || 0) - Number(left.rate || 0));
+      .sort((left, right) => {
+        if (left.custom !== right.custom) return left.custom ? -1 : 1;
+        return Number(right.rate || 0) - Number(left.rate || 0);
+      });
   }, [customRows, filtered, filter, hiddenRows, models, processes, rowRatings, search]);
 
   function updateTableHeading(index: number, value: string) {
@@ -221,6 +226,53 @@ export default function StrategiesPage() {
     );
     setCustomRows(nextRows);
     persistCustomRows(nextRows);
+  }
+
+  async function updateSourceRowModels(row: MatrixRow, modelIds: string[]) {
+    if (!row.strategyId || !supabase) return;
+
+    const previousStrategies = strategies;
+    const nextRelations = modelIds.map((modelId) => {
+      const model = models.find((item) => item.id === modelId);
+      return {
+        id: `${row.strategyId}:${modelId}`,
+        strategy_id: row.strategyId as string,
+        business_model_id: modelId,
+        business_models: model ? { id: model.id, title: model.title } : null,
+      };
+    });
+
+    setStrategies((currentStrategies) =>
+      currentStrategies.map((strategy) =>
+        strategy.id === row.strategyId
+          ? { ...strategy, strategy_business_models: nextRelations }
+          : strategy,
+      ),
+    );
+
+    const deleteResult = await supabase.from("strategy_business_models").delete().eq("strategy_id", row.strategyId);
+    if (deleteResult.error) {
+      setStrategies(previousStrategies);
+      setError(deleteResult.error.message);
+      return;
+    }
+
+    if (modelIds.length) {
+      const insertResult = await supabase.from("strategy_business_models").insert(
+        modelIds.map((modelId) => ({
+          strategy_id: row.strategyId,
+          business_model_id: modelId,
+        })),
+      );
+
+      if (insertResult.error) {
+        setStrategies(previousStrategies);
+        setError(insertResult.error.message);
+        return;
+      }
+    }
+
+    refresh();
   }
 
   function updateSourceRate(rowId: string, value: string) {
@@ -305,12 +357,14 @@ export default function StrategiesPage() {
                 <tr key={`${row.id}-${index}`} className="group border-b border-zinc-100 last:border-b-0">
                   {rowFields.map((field) => (
                     <td key={field} className="border-r border-zinc-100 p-0 align-top last:border-r-0">
-                      {row.custom && field === "businessModel" ? (
+                      {field === "businessModel" ? (
                         <MultiSelect
                           label="Select business models"
                           options={models.map((model) => ({ id: model.id, label: model.title }))}
                           selected={row.businessModelIds ?? idsFromTitles(row.businessModel, models)}
-                          onChange={(modelIds) => updateCustomRowModels(row.id, modelIds)}
+                          onChange={(modelIds) =>
+                            row.custom ? updateCustomRowModels(row.id, modelIds) : updateSourceRowModels(row, modelIds)
+                          }
                         />
 	                      ) : row.custom && field === "rate" ? (
 	                        <Select
