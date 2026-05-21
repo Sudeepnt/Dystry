@@ -122,7 +122,11 @@ export default function AtomicProcessesPage() {
 
         return matchesFilter && matchesSearch;
       })
-      .sort((left, right) => totalRating(right.ratings) - totalRating(left.ratings));
+      .sort((left, right) => {
+        if (left.custom && right.custom) return customRowTimestamp(right.id) - customRowTimestamp(left.id);
+        if (left.custom !== right.custom) return left.custom ? -1 : 1;
+        return totalRating(right.ratings) - totalRating(left.ratings);
+      });
   }, [customRows, filter, models, processes, ratingOverrides, search]);
 
   function addCustomRow() {
@@ -443,6 +447,11 @@ function rowHasContent(row: AtomicTableRow) {
       row.shortlisted ||
       totalRating(row.ratings),
   );
+}
+
+function customRowTimestamp(rowId: string) {
+  const timestamp = Number(rowId.replace("custom:", ""));
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function resizeTextarea(element: HTMLTextAreaElement | null) {

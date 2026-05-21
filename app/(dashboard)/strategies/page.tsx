@@ -182,14 +182,11 @@ export default function StrategiesPage() {
     return [...sourceRows, ...visibleCustomRows]
       .filter((row) => !hiddenRows.includes(row.id))
       .sort((left, right) => {
-        const leftDraft = isDraftRow(left);
-        const rightDraft = isDraftRow(right);
-        if (leftDraft !== rightDraft) return leftDraft ? -1 : 1;
+        if (left.custom && right.custom) return customRowTimestamp(right.id) - customRowTimestamp(left.id);
+        if (left.custom !== right.custom) return left.custom ? -1 : 1;
 
         const ratingDifference = Number(right.rate || 0) - Number(left.rate || 0);
         if (ratingDifference) return ratingDifference;
-
-        if (left.custom && right.custom) return customRowTimestamp(right.id) - customRowTimestamp(left.id);
         return 0;
       });
   }, [customRows, filtered, filter, hiddenRows, models, processes, rowRatings, search]);
@@ -443,16 +440,6 @@ function normalizeRate(value: string) {
 function rateFromEvidence(value: string | null) {
   const match = value?.match(/Rate:\s*(\d+)/i);
   return match ? normalizeRate(match[1]) : "";
-}
-
-function isDraftRow(row: MatrixRow) {
-  return Boolean(
-    row.custom &&
-      !row.strategy.trim() &&
-      !row.process.trim() &&
-      !row.channels.trim() &&
-      !row.output.trim(),
-  );
 }
 
 function customRowTimestamp(rowId: string) {
