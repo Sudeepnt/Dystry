@@ -27,6 +27,7 @@ type AtomicTableRow = {
   ratings: AtomicRatings;
   shortlisted?: boolean;
   custom?: boolean;
+  fresh?: boolean;
 };
 
 const ratingFields: Array<keyof AtomicRatings> = [
@@ -48,6 +49,7 @@ export default function AtomicProcessesPage() {
   const [filter, setFilter] = useState("all");
   const [ratingOverrides, setRatingOverrides] = useState<Record<string, AtomicRatings>>({});
   const [stageOverrides, setStageOverrides] = useState<Record<string, string>>({});
+  const [freshProcessIds, setFreshProcessIds] = useState<string[]>([]);
   const [error, setError] = useState("");
 
   async function refresh() {
@@ -65,8 +67,6 @@ export default function AtomicProcessesPage() {
   }
 
   useEffect(() => {
-    refresh();
-
     const savedRatings = window.localStorage.getItem(atomicRatingStorageKey);
     if (savedRatings) {
       try {
@@ -85,8 +85,12 @@ export default function AtomicProcessesPage() {
         const parsed = JSON.parse(savedCustomRows);
         if (Array.isArray(parsed)) {
           const parsedRows = parsed.map(normalizeCustomRow).filter(rowHasContent);
-          setCustomRows(parsedRows);
-          window.localStorage.setItem(atomicCustomRowsStorageKey, JSON.stringify(parsedRows));
+          if (!supabase) {
+            setCustomRows(parsedRows);
+            window.localStorage.setItem(atomicCustomRowsStorageKey, JSON.stringify(parsedRows));
+          } else {
+            migrateLocalRows(parsedRows);
+          }
         }
       } catch {
         window.localStorage.removeItem(atomicCustomRowsStorageKey);
@@ -104,6 +108,10 @@ export default function AtomicProcessesPage() {
         window.localStorage.removeItem(atomicStageStorageKey);
       }
     }
+
+    refresh();
+  // Runs once to hydrate browser-local rows and migrate them when Supabase is available.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const tableRows = useMemo(() => {
@@ -120,12 +128,13 @@ export default function AtomicProcessesPage() {
         linkedModelIds,
         businessModel: modelTitles.length ? modelTitles.join(", ") : "All / TBD",
         productBrief: process.product_brief || process.title,
-        input: process.input_text || "Not documented",
-        action: process.action_text || "Not documented",
-        output: process.output_text || "Not documented",
-        stage: stageOverrides[process.id] ?? "",
+        input: process.input_text ?? "",
+        action: process.action_text ?? "",
+        output: process.output_text ?? "",
+        stage: normalizeStage(process.stage) || stageOverrides[process.id] || "",
         ratings,
         shortlisted: process.shortlisted,
+        fresh: freshProcessIds.includes(process.id),
       };
     });
 
@@ -141,11 +150,44 @@ export default function AtomicProcessesPage() {
       .sort((left, right) => {
         if (left.custom && right.custom) return customRowTimestamp(right.id) - customRowTimestamp(left.id);
         if (left.custom !== right.custom) return left.custom ? -1 : 1;
+        if (left.fresh !== right.fresh) return left.fresh ? -1 : 1;
         return totalRating(right.ratings) - totalRating(left.ratings);
       });
-  }, [customRows, filter, models, processes, ratingOverrides, search, stageOverrides]);
+  }, [customRows, filter, freshProcessIds, models, processes, ratingOverrides, search, stageOverrides]);
 
-  function addCustomRow() {
+  async function addCustomRow() {
+    if (supabase) {
+      const createdAt = new Date().toISOString();
+      const title = `Untitled atomic process ${createdAt}`;
+      const { data, error: insertError } = await supabase
+        .from("atomic_processes")
+        .insert({
+          title,
+          product_brief: "",
+          input_text: "",
+          action_text: "",
+          output_text: "",
+          stage: "",
+          pain_frequency: 0,
+          software_replaceability: 0,
+          willingness_to_pay: 0,
+          composability: 0,
+        })
+        .select("*, strategies(id, title), atomic_process_business_models(*, business_models(id, title))")
+        .single();
+
+      if (insertError) {
+        setError(insertError.message);
+        return;
+      }
+
+      if (data) {
+        setFreshProcessIds((current) => [data.id, ...current.filter((id) => id !== data.id)]);
+        setProcesses((current) => [data, ...current]);
+      }
+      return;
+    }
+
     setCustomRows((currentRows) => [
       {
         id: `custom:${Date.now()}`,
@@ -164,18 +206,28 @@ export default function AtomicProcessesPage() {
     ]);
   }
 
-  function updateSourceRating(processId: string, field: keyof AtomicRatings, value: string) {
+  async function updateSourceRating(processId: string, field: keyof AtomicRatings, value: string) {
     const currentProcess = processes.find((process) => process.id === processId);
     const currentRatings = ratingOverrides[processId] ?? (currentProcess ? processRatings(currentProcess) : normalizeRatings({}));
+    const numericValue = Number(value);
     const nextRatings = {
       ...ratingOverrides,
       [processId]: {
         ...currentRatings,
-        [field]: Number(value),
+        [field]: numericValue,
       },
     };
     setRatingOverrides(nextRatings);
     window.localStorage.setItem(atomicRatingStorageKey, JSON.stringify(nextRatings));
+
+    if (!supabase) return;
+
+    setProcesses((currentProcesses) =>
+      currentProcesses.map((process) => (process.id === processId ? { ...process, [field]: numericValue } : process)),
+    );
+
+    const { error: updateError } = await supabase.from("atomic_processes").update({ [field]: numericValue }).eq("id", processId);
+    if (updateError) setError(updateError.message);
   }
 
   function updateCustomRow(rowId: string, update: (row: AtomicTableRow) => AtomicTableRow) {
@@ -195,10 +247,151 @@ export default function AtomicProcessesPage() {
     }));
   }
 
-  function updateSourceStage(processId: string, value: string) {
-    const nextStages = { ...stageOverrides, [processId]: normalizeStage(value) };
+  async function updateSourceStage(processId: string, value: string) {
+    const nextStage = normalizeStage(value);
+    const nextStages = { ...stageOverrides, [processId]: nextStage };
     setStageOverrides(nextStages);
     window.localStorage.setItem(atomicStageStorageKey, JSON.stringify(nextStages));
+
+    if (!supabase) return;
+
+    setProcesses((currentProcesses) =>
+      currentProcesses.map((process) => (process.id === processId ? { ...process, stage: nextStage } : process)),
+    );
+
+    const { error: updateError } = await supabase.from("atomic_processes").update({ stage: nextStage }).eq("id", processId);
+    if (updateError) setError(updateError.message);
+  }
+
+  function updateSourceText(processId: string, field: "productBrief" | "input" | "action" | "output", value: string) {
+    setProcesses((currentProcesses) =>
+      currentProcesses.map((process) =>
+        process.id === processId
+          ? {
+              ...process,
+              ...(field === "productBrief" ? { product_brief: value } : {}),
+              ...(field === "input" ? { input_text: value } : {}),
+              ...(field === "action" ? { action_text: value } : {}),
+              ...(field === "output" ? { output_text: value } : {}),
+            }
+          : process,
+      ),
+    );
+  }
+
+  async function saveSourceText(processId: string, field: "productBrief" | "input" | "action" | "output", value: string) {
+    if (!supabase) return;
+
+    const payload =
+      field === "productBrief"
+        ? { product_brief: value }
+        : field === "input"
+          ? { input_text: value }
+          : field === "action"
+            ? { action_text: value }
+            : { output_text: value };
+
+    const { error: updateError } = await supabase.from("atomic_processes").update(payload).eq("id", processId);
+    if (updateError) setError(updateError.message);
+  }
+
+  async function updateSourceRowModels(row: AtomicTableRow, modelIds: string[]) {
+    if (!row.processId || !supabase) return;
+
+    const previousProcesses = processes;
+    const nextRelations = modelIds.map((modelId) => {
+      const model = models.find((item) => item.id === modelId);
+      return {
+        id: `${row.processId}:${modelId}`,
+        atomic_process_id: row.processId as string,
+        business_model_id: modelId,
+        business_models: model ? { id: model.id, title: model.title } : null,
+      };
+    });
+
+    setProcesses((currentProcesses) =>
+      currentProcesses.map((process) =>
+        process.id === row.processId
+          ? { ...process, atomic_process_business_models: nextRelations }
+          : process,
+      ),
+    );
+
+    const deleteResult = await supabase.from("atomic_process_business_models").delete().eq("atomic_process_id", row.processId);
+    if (deleteResult.error) {
+      setProcesses(previousProcesses);
+      setError(deleteResult.error.message);
+      return;
+    }
+
+    if (modelIds.length) {
+      const insertResult = await supabase.from("atomic_process_business_models").insert(
+        modelIds.map((modelId) => ({
+          atomic_process_id: row.processId,
+          business_model_id: modelId,
+        })),
+      );
+
+      if (insertResult.error) {
+        setProcesses(previousProcesses);
+        setError(insertResult.error.message);
+        return;
+      }
+    }
+  }
+
+  async function migrateLocalRows(rows: AtomicTableRow[]) {
+    if (!supabase || !rows.length) return;
+
+    const createdIds: string[] = [];
+
+    for (const [index, row] of rows.entries()) {
+      const createdAt = new Date().toISOString();
+      const titleBase = row.productBrief.trim() || `Untitled atomic process ${createdAt}`;
+      const { data, error: insertError } = await supabase
+        .from("atomic_processes")
+        .insert({
+          title: `${titleBase.slice(0, 120)} (${Date.now()}-${index})`,
+          product_brief: row.productBrief.trim(),
+          input_text: row.input,
+          action_text: row.action,
+          output_text: row.output,
+          stage: normalizeStage(row.stage),
+          pain_frequency: row.ratings.pain_frequency,
+          software_replaceability: row.ratings.software_replaceability,
+          willingness_to_pay: row.ratings.willingness_to_pay,
+          composability: row.ratings.composability,
+          shortlisted: Boolean(row.shortlisted),
+        })
+        .select("id")
+        .single();
+
+      if (insertError || !data) {
+        setError(insertError?.message ?? "Unable to migrate local atomic process rows to Supabase");
+        return;
+      }
+
+      createdIds.push(data.id);
+
+      if (row.linkedModelIds?.length) {
+        const relationResult = await supabase.from("atomic_process_business_models").insert(
+          row.linkedModelIds.map((modelId) => ({
+            atomic_process_id: data.id,
+            business_model_id: modelId,
+          })),
+        );
+
+        if (relationResult.error) {
+          setError(relationResult.error.message);
+          return;
+        }
+      }
+    }
+
+    window.localStorage.removeItem(atomicCustomRowsStorageKey);
+    setCustomRows([]);
+    setFreshProcessIds((current) => [...createdIds, ...current.filter((id) => !createdIds.includes(id))]);
+    refresh();
   }
 
   function deleteCustomRow(rowId: string) {
@@ -322,14 +515,24 @@ export default function AtomicProcessesPage() {
                         onChange={(modelIds) => updateCustomRowModels(row.id, modelIds)}
                       />
                     ) : (
-                      <div className="p-3 text-zinc-800">{row.businessModel}</div>
+                      <MultiSelect
+                        label="Select business models"
+                        options={models.map((model) => ({ id: model.id, label: model.title }))}
+                        selected={row.linkedModelIds?.length ? row.linkedModelIds : idsFromTitles(row.businessModel, models)}
+                        onChange={(modelIds) => updateSourceRowModels(row, modelIds)}
+                      />
                     )}
                   </td>
                   <td className="border-r border-zinc-100 p-0 align-top">
                     {row.custom ? (
                       <GrowingTextarea value={row.productBrief} label="Product brief" onChange={(value) => updateCustomRow(row.id, (current) => ({ ...current, productBrief: value }))} />
                     ) : (
-                      <div className="whitespace-pre-wrap p-3 leading-5 text-zinc-700">{row.productBrief}</div>
+                      <GrowingTextarea
+                        value={row.productBrief}
+                        label="Product brief"
+                        onChange={(value) => row.processId ? updateSourceText(row.processId, "productBrief", value) : undefined}
+                        onBlur={(value) => row.processId ? saveSourceText(row.processId, "productBrief", value) : undefined}
+                      />
                     )}
                   </td>
                   <td className="border-r border-zinc-100 px-3 py-2 align-top">
@@ -384,21 +587,36 @@ export default function AtomicProcessesPage() {
                     {row.custom ? (
                       <GrowingTextarea value={row.input} label="Input" onChange={(value) => updateCustomRow(row.id, (current) => ({ ...current, input: value }))} />
                     ) : (
-                      <div className="whitespace-pre-wrap p-3 leading-5 text-zinc-600">{row.input}</div>
+                      <GrowingTextarea
+                        value={row.input}
+                        label="Input"
+                        onChange={(value) => row.processId ? updateSourceText(row.processId, "input", value) : undefined}
+                        onBlur={(value) => row.processId ? saveSourceText(row.processId, "input", value) : undefined}
+                      />
                     )}
                   </td>
                   <td className="border-r border-zinc-100 p-0 align-top">
                     {row.custom ? (
                       <GrowingTextarea value={row.action} label="Action" onChange={(value) => updateCustomRow(row.id, (current) => ({ ...current, action: value }))} />
                     ) : (
-                      <div className="whitespace-pre-wrap p-3 leading-5 text-zinc-600">{row.action}</div>
+                      <GrowingTextarea
+                        value={row.action}
+                        label="Action"
+                        onChange={(value) => row.processId ? updateSourceText(row.processId, "action", value) : undefined}
+                        onBlur={(value) => row.processId ? saveSourceText(row.processId, "action", value) : undefined}
+                      />
                     )}
                   </td>
                   <td className="border-r border-zinc-100 p-0 align-top">
                     {row.custom ? (
                       <GrowingTextarea value={row.output} label="Output" onChange={(value) => updateCustomRow(row.id, (current) => ({ ...current, output: value }))} />
                     ) : (
-                      <div className="whitespace-pre-wrap p-3 leading-5 text-zinc-600">{row.output}</div>
+                      <GrowingTextarea
+                        value={row.output}
+                        label="Output"
+                        onChange={(value) => row.processId ? updateSourceText(row.processId, "output", value) : undefined}
+                        onBlur={(value) => row.processId ? saveSourceText(row.processId, "output", value) : undefined}
+                      />
                     )}
                   </td>
                   <td className="p-3 align-top text-black">{totalRating(row.ratings)}</td>
@@ -431,7 +649,17 @@ export default function AtomicProcessesPage() {
   );
 }
 
-function GrowingTextarea({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function GrowingTextarea({
+  label,
+  value,
+  onBlur,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onBlur?: (value: string) => void;
+  onChange: (value: string) => void;
+}) {
   return (
     <textarea
       aria-label={label}
@@ -440,6 +668,7 @@ function GrowingTextarea({ label, value, onChange }: { label: string; value: str
       rows={2}
       value={value}
       onInput={(event) => resizeTextarea(event.currentTarget)}
+      onBlur={(event) => onBlur?.(event.target.value)}
       onChange={(event) => onChange(event.target.value)}
     />
   );

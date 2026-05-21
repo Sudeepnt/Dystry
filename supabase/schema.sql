@@ -19,6 +19,14 @@ create table if not exists distribution_channels (
   created_at timestamptz not null default now()
 );
 
+create table if not exists funnel_notes (
+  id uuid primary key default gen_random_uuid(),
+  stage text not null unique,
+  content text not null default '',
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
 create table if not exists business_models (
   id uuid primary key default gen_random_uuid(),
   title text not null unique,
@@ -74,6 +82,7 @@ create table if not exists atomic_processes (
   output_text text,
   software_ownable text,
   product_brief text,
+  stage text,
   shortlisted boolean not null default false,
   created_at timestamptz not null default now()
 );
@@ -92,6 +101,7 @@ grant all on all sequences in schema public to anon, authenticated;
 alter table overview_subproblems enable row level security;
 alter table research_sources enable row level security;
 alter table distribution_channels enable row level security;
+alter table funnel_notes enable row level security;
 alter table business_models enable row level security;
 alter table business_model_types enable row level security;
 alter table strategies enable row level security;
@@ -118,6 +128,14 @@ with check (true);
 drop policy if exists "public full access" on distribution_channels;
 create policy "public full access"
 on distribution_channels
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists "public full access" on funnel_notes;
+create policy "public full access"
+on funnel_notes
 for all
 to anon, authenticated
 using (true)

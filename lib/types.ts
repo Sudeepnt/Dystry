@@ -24,6 +24,14 @@ export type DistributionChannel = {
   created_at: string;
 };
 
+export type FunnelNote = {
+  id: string;
+  stage: string;
+  content: string;
+  updated_at: string;
+  created_at: string;
+};
+
 export type BusinessModelType = {
   id: string;
   business_model_id: string;
@@ -87,6 +95,7 @@ export type AtomicProcess = {
   output_text: string | null;
   software_ownable: string | null;
   product_brief: string | null;
+  stage: string | null;
   shortlisted: boolean;
   created_at: string;
   strategies?: Pick<Strategy, "id" | "title"> | null;
