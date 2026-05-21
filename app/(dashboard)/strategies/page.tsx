@@ -16,22 +16,25 @@ type MatrixRow = {
   process: string;
   channels: string;
   output: string;
+  stage: string;
   rate: string;
   custom?: boolean;
 };
 
-const defaultTableHeadings = ["Business model", "Strategies", "Process", "Channels", "Output", "Rate"];
+const defaultTableHeadings = ["Business model", "Strategies", "Process", "Channels", "Output", "Stage", "Rate"];
 const ratingOptions = Array.from({ length: 11 }, (_, index) => index);
+const stageOptions = ["lead gen", "lead nurturing", "deal close"];
 const headingStorageKey = "dystry.strategy.tableHeadings";
 const customRowsStorageKey = "dystry.strategy.customRows";
 const rowRatingsStorageKey = "dystry.strategy.rowRatings";
 const hiddenRowsStorageKey = "dystry.strategy.hiddenRows";
-const rowFields: Array<keyof Pick<MatrixRow, "businessModel" | "strategy" | "process" | "channels" | "output" | "rate">> = [
+const rowFields: Array<keyof Pick<MatrixRow, "businessModel" | "strategy" | "process" | "channels" | "output" | "stage" | "rate">> = [
   "businessModel",
   "strategy",
   "process",
   "channels",
   "output",
+  "stage",
   "rate",
 ];
 
@@ -163,6 +166,7 @@ export default function StrategiesPage() {
         process: relatedProcesses.length ? relatedProcesses.join(", ") : "Unmapped",
         channels: strategy.channel_mechanism || strategy.strategy_category || "Not documented",
         output: strategy.primary_metric || strategy.landmark_example || "Not documented",
+        stage: normalizeStage(strategy.stage),
         rate: rowRatings[id] ?? rateFromEvidence(strategy.evidence_quality),
       };
     });
@@ -171,7 +175,7 @@ export default function StrategiesPage() {
       const query = search.trim().toLowerCase();
       const matchesSearch =
         !query ||
-        [row.businessModel, row.strategy, row.process, row.channels, row.output, row.rate].join(" ").toLowerCase().includes(query);
+        [row.businessModel, row.strategy, row.process, row.channels, row.output, row.stage, row.rate].join(" ").toLowerCase().includes(query);
       const matchesFilter =
         filter === "all" ||
         row.businessModelIds?.includes(filter) ||
@@ -207,6 +211,7 @@ export default function StrategiesPage() {
         process: "",
         channels: "",
         output: "",
+        stage: "",
         rate: "",
         custom: true,
       },
@@ -285,6 +290,21 @@ export default function StrategiesPage() {
     window.localStorage.setItem(rowRatingsStorageKey, JSON.stringify(nextRatings));
   }
 
+  async function updateSourceStage(row: MatrixRow, value: string) {
+    if (!row.strategyId || !supabase) return;
+
+    const previousStrategies = strategies;
+    setStrategies((currentStrategies) =>
+      currentStrategies.map((strategy) => (strategy.id === row.strategyId ? { ...strategy, stage: value } : strategy)),
+    );
+
+    const { error: updateError } = await supabase.from("strategies").update({ stage: value }).eq("id", row.strategyId);
+    if (updateError) {
+      setStrategies(previousStrategies);
+      setError(updateError.message);
+    }
+  }
+
   function deleteRow(row: MatrixRow) {
     if (row.custom) {
       const nextRows = customRows.filter((customRow) => customRow.id !== row.id);
@@ -338,6 +358,7 @@ export default function StrategiesPage() {
               <col />
               <col className="w-[160px]" />
               <col />
+              <col className="w-[132px]" />
               <col className="w-[90px]" />
               <col className="w-10" />
             </colgroup>
@@ -370,6 +391,24 @@ export default function StrategiesPage() {
                             row.custom ? updateCustomRowModels(row.id, modelIds) : updateSourceRowModels(row, modelIds)
                           }
                         />
+	                      ) : field === "stage" ? (
+	                        <Select
+	                          aria-label={`Stage ${row.strategy || "strategy row"}`}
+	                          className="h-9 w-full border-0 bg-transparent px-3 text-sm focus:border-0 focus:ring-0"
+	                          value={row.stage}
+	                          onChange={(event) =>
+	                            row.custom
+	                              ? updateCustomRow(row.id, field, event.target.value)
+	                              : updateSourceStage(row, event.target.value)
+	                          }
+	                        >
+	                          <option value="">Select stage</option>
+	                          {stageOptions.map((option) => (
+	                            <option key={option} value={option}>
+	                              {option}
+	                            </option>
+	                          ))}
+	                        </Select>
 	                      ) : row.custom && field === "rate" ? (
 	                        <Select
 	                          aria-label={tableHeadings[rowFields.indexOf(field)]}
@@ -437,6 +476,11 @@ function normalizeRate(value: string) {
   return String(Math.min(10, Number(digits)));
 }
 
+function normalizeStage(value: string | null | undefined) {
+  const nextValue = String(value ?? "").trim().toLowerCase();
+  return stageOptions.includes(nextValue) ? nextValue : "";
+}
+
 function rateFromEvidence(value: string | null) {
   const match = value?.match(/Rate:\s*(\d+)/i);
   return match ? normalizeRate(match[1]) : "";
@@ -476,6 +520,7 @@ function normalizeCustomRow(row: Partial<MatrixRow>): MatrixRow {
     process: String(row.process ?? ""),
     channels: String(row.channels ?? ""),
     output: String(row.output ?? ""),
+    stage: normalizeStage(row.stage),
     rate: normalizeRate(String(row.rate ?? "")),
     custom: true,
   };

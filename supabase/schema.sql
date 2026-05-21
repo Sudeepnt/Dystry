@@ -13,6 +13,12 @@ create table if not exists research_sources (
   created_at timestamptz not null default now()
 );
 
+create table if not exists distribution_channels (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists business_models (
   id uuid primary key default gen_random_uuid(),
   title text not null unique,
@@ -85,6 +91,7 @@ grant all on all sequences in schema public to anon, authenticated;
 
 alter table overview_subproblems enable row level security;
 alter table research_sources enable row level security;
+alter table distribution_channels enable row level security;
 alter table business_models enable row level security;
 alter table business_model_types enable row level security;
 alter table strategies enable row level security;
@@ -103,6 +110,14 @@ with check (true);
 drop policy if exists "public full access" on research_sources;
 create policy "public full access"
 on research_sources
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists "public full access" on distribution_channels;
+create policy "public full access"
+on distribution_channels
 for all
 to anon, authenticated
 using (true)

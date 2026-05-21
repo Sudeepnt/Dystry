@@ -18,6 +18,12 @@ export type ResearchSource = {
   created_at: string;
 };
 
+export type DistributionChannel = {
+  id: string;
+  name: string;
+  created_at: string;
+};
+
 export type BusinessModelType = {
   id: string;
   business_model_id: string;

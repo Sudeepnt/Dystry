@@ -6,7 +6,7 @@ import {
   fallbackStrategies,
   fallbackSubproblems,
 } from "@/lib/fallback-data";
-import type { AtomicProcess, BusinessModel, Counts, ResearchSource, Strategy, Subproblem } from "@/lib/types";
+import type { AtomicProcess, BusinessModel, Counts, DistributionChannel, ResearchSource, Strategy, Subproblem } from "@/lib/types";
 
 export function emptyCounts(): Counts {
   return {
@@ -45,6 +45,13 @@ export async function listSubproblems(): Promise<Subproblem[]> {
 export async function listSources(): Promise<ResearchSource[]> {
   if (!supabase) return fallbackSources;
   const { data, error } = await supabase.from("research_sources").select("*").order("created_at");
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function listChannels(): Promise<DistributionChannel[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from("distribution_channels").select("*").order("created_at");
   if (error) throw error;
   return data ?? [];
 }

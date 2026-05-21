@@ -23,6 +23,7 @@ type AtomicTableRow = {
   input: string;
   action: string;
   output: string;
+  stage: string;
   ratings: AtomicRatings;
   shortlisted?: boolean;
   custom?: boolean;
@@ -34,8 +35,10 @@ const ratingFields: Array<keyof AtomicRatings> = [
   "willingness_to_pay",
 ];
 const ratingOptions = Array.from({ length: 11 }, (_, index) => index);
+const stageOptions = ["lead gen", "lead nurturing", "deal close"];
 const atomicRatingStorageKey = "dystry.atomic.tableRatings";
 const atomicCustomRowsStorageKey = "dystry.atomic.customRows";
+const atomicStageStorageKey = "dystry.atomic.tableStages";
 
 export default function AtomicProcessesPage() {
   const [processes, setProcesses] = useState<AtomicProcess[]>([]);
@@ -44,6 +47,7 @@ export default function AtomicProcessesPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [ratingOverrides, setRatingOverrides] = useState<Record<string, AtomicRatings>>({});
+  const [stageOverrides, setStageOverrides] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
 
   async function refresh() {
@@ -88,29 +92,41 @@ export default function AtomicProcessesPage() {
         window.localStorage.removeItem(atomicCustomRowsStorageKey);
       }
     }
+
+    const savedStages = window.localStorage.getItem(atomicStageStorageKey);
+    if (savedStages) {
+      try {
+        const parsed = JSON.parse(savedStages);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          setStageOverrides(Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, normalizeStage(String(value))])));
+        }
+      } catch {
+        window.localStorage.removeItem(atomicStageStorageKey);
+      }
+    }
   }, []);
 
   const tableRows = useMemo(() => {
     const query = search.trim().toLowerCase();
     const selectedModel = models.find((model) => model.id === filter);
-    const sourceRows: AtomicTableRow[] = processes.flatMap((process) => {
+    const sourceRows: AtomicTableRow[] = processes.map((process) => {
       const modelTitles = relationTitles(process.atomic_process_business_models);
       const linkedModelIds = process.atomic_process_business_models?.map((item) => item.business_model_id) ?? [];
-      const modelsForRows = modelTitles.length ? modelTitles : ["All / TBD"];
       const ratings = ratingOverrides[process.id] ?? processRatings(process);
 
-      return modelsForRows.map((businessModel) => ({
-        id: `${process.id}:${businessModel}`,
+      return {
+        id: process.id,
         processId: process.id,
         linkedModelIds,
-        businessModel,
+        businessModel: modelTitles.length ? modelTitles.join(", ") : "All / TBD",
         productBrief: process.product_brief || process.title,
         input: process.input_text || "Not documented",
         action: process.action_text || "Not documented",
         output: process.output_text || "Not documented",
+        stage: stageOverrides[process.id] ?? "",
         ratings,
         shortlisted: process.shortlisted,
-      }));
+      };
     });
 
     return [...sourceRows, ...customRows]
@@ -118,7 +134,7 @@ export default function AtomicProcessesPage() {
         const matchesFilter = filter === "all" || row.linkedModelIds?.includes(filter) || row.businessModel === selectedModel?.title;
         const matchesSearch =
           !query ||
-          [row.businessModel, row.productBrief, row.input, row.action, row.output].join(" ").toLowerCase().includes(query);
+          [row.businessModel, row.productBrief, row.stage, row.input, row.action, row.output].join(" ").toLowerCase().includes(query);
 
         return matchesFilter && matchesSearch;
       })
@@ -127,7 +143,7 @@ export default function AtomicProcessesPage() {
         if (left.custom !== right.custom) return left.custom ? -1 : 1;
         return totalRating(right.ratings) - totalRating(left.ratings);
       });
-  }, [customRows, filter, models, processes, ratingOverrides, search]);
+  }, [customRows, filter, models, processes, ratingOverrides, search, stageOverrides]);
 
   function addCustomRow() {
     setCustomRows((currentRows) => [
@@ -139,6 +155,7 @@ export default function AtomicProcessesPage() {
         input: "",
         action: "",
         output: "",
+        stage: "",
         ratings: normalizeRatings({}),
         shortlisted: false,
         custom: true,
@@ -178,10 +195,30 @@ export default function AtomicProcessesPage() {
     }));
   }
 
+  function updateSourceStage(processId: string, value: string) {
+    const nextStages = { ...stageOverrides, [processId]: normalizeStage(value) };
+    setStageOverrides(nextStages);
+    window.localStorage.setItem(atomicStageStorageKey, JSON.stringify(nextStages));
+  }
+
   function deleteCustomRow(rowId: string) {
     const nextRows = customRows.filter((row) => row.id !== rowId);
     setCustomRows(nextRows);
     persistCustomRows(nextRows);
+  }
+
+  async function deleteSourceRow(row: AtomicTableRow) {
+    if (!row.processId || !supabase) return;
+    if (!window.confirm("Delete this atomic process?")) return;
+
+    const previousProcesses = processes;
+    setProcesses((currentProcesses) => currentProcesses.filter((process) => process.id !== row.processId));
+
+    const { error: deleteError } = await supabase.from("atomic_processes").delete().eq("id", row.processId);
+    if (deleteError) {
+      setProcesses(previousProcesses);
+      setError(deleteError.message);
+    }
   }
 
   async function toggleShortlist(row: AtomicTableRow) {
@@ -238,10 +275,11 @@ export default function AtomicProcessesPage() {
           }
         />
         <div className="overflow-x-auto border border-zinc-200 bg-white">
-          <table className="min-w-[1304px] w-full table-fixed border-collapse text-left text-sm">
+          <table className="min-w-[1428px] w-full table-fixed border-collapse text-left text-sm">
             <colgroup>
               <col className="w-[220px]" />
               <col className="w-[260px]" />
+              <col className="w-[132px]" />
               <col className="w-[96px]" />
               <col className="w-[96px]" />
               <col className="w-[112px]" />
@@ -256,6 +294,7 @@ export default function AtomicProcessesPage() {
                 {[
                   "Business model",
                   "Product brief",
+                  "Stage",
                   "Pain frequency",
                   "SW replaceability",
                   "Will people pay to solve this?",
@@ -292,6 +331,28 @@ export default function AtomicProcessesPage() {
                     ) : (
                       <div className="whitespace-pre-wrap p-3 leading-5 text-zinc-700">{row.productBrief}</div>
                     )}
+                  </td>
+                  <td className="border-r border-zinc-100 px-3 py-2 align-top">
+                    <Select
+                      aria-label={`Stage ${row.productBrief || "atomic process row"}`}
+                      className="h-9 w-full border-0 bg-transparent px-0 text-sm focus:border-0 focus:ring-0"
+                      value={row.stage}
+                      onChange={(event) => {
+                        if (row.custom) {
+                          updateCustomRow(row.id, (current) => ({ ...current, stage: event.target.value }));
+                          return;
+                        }
+
+                        if (row.processId) updateSourceStage(row.processId, event.target.value);
+                      }}
+                    >
+                      <option value="">Select stage</option>
+                      {stageOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </Select>
                   </td>
                   {ratingFields.map((field) => (
                     <td key={field} className="border-r border-zinc-100 px-3 py-2 align-top">
@@ -350,15 +411,13 @@ export default function AtomicProcessesPage() {
                       >
                         <Heart size={16} className={row.shortlisted ? "fill-black" : ""} />
                       </button>
-                      {row.custom ? (
-                        <button
-                          aria-label="Delete atomic process row"
-                          className="inline-flex h-8 w-8 items-center justify-center text-zinc-400 opacity-0 transition hover:text-black group-hover:opacity-100 focus:opacity-100"
-                          onClick={() => deleteCustomRow(row.id)}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      ) : null}
+                      <button
+                        aria-label="Delete atomic process row"
+                        className="inline-flex h-8 w-8 items-center justify-center text-zinc-400 opacity-0 transition hover:text-black group-hover:opacity-100 focus:opacity-100"
+                        onClick={() => (row.custom ? deleteCustomRow(row.id) : deleteSourceRow(row))}
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -415,6 +474,7 @@ function normalizeCustomRow(row: Partial<AtomicTableRow>): AtomicTableRow {
     input: String(row.input ?? ""),
     action: String(row.action ?? ""),
     output: String(row.output ?? ""),
+    stage: normalizeStage(row.stage),
     ratings: normalizeRatings(row.ratings),
     shortlisted: Boolean(row.shortlisted),
     custom: true,
@@ -444,9 +504,15 @@ function rowHasContent(row: AtomicTableRow) {
       row.input.trim() ||
       row.action.trim() ||
       row.output.trim() ||
+      row.stage.trim() ||
       row.shortlisted ||
       totalRating(row.ratings),
   );
+}
+
+function normalizeStage(value: string | null | undefined) {
+  const nextValue = String(value ?? "").trim().toLowerCase();
+  return stageOptions.includes(nextValue) ? nextValue : "";
 }
 
 function customRowTimestamp(rowId: string) {

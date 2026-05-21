@@ -2,16 +2,17 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { Plus, Pencil, Trash2 } from "lucide-react";
-import { getCounts, listSources, listSubproblems } from "@/lib/data";
+import { getCounts, listChannels, listSources, listSubproblems } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
-import type { Counts, ResearchSource, Subproblem } from "@/lib/types";
-import { Button, EmptyState, ErrorState, Field, Input, Modal, SectionHeader, StatCard, Textarea, Pill } from "@/components/ui";
+import type { Counts, DistributionChannel, ResearchSource, Subproblem } from "@/lib/types";
+import { Button, EmptyState, ErrorState, Field, Input, SectionHeader, StatCard, Textarea, Pill } from "@/components/ui";
 
 const sourceBlank = {
   title: "",
   description: "",
 };
 const localSubproblemsStorageKey = "dystry.overview.subproblems";
+const localChannelsStorageKey = "dystry.overview.channels";
 const localSourcesStorageKey = "dystry.overview.sources";
 
 export default function OverviewPage() {
@@ -22,24 +23,29 @@ export default function OverviewPage() {
     shortlisted: 0,
   });
   const [subproblems, setSubproblems] = useState<Subproblem[]>([]);
+  const [channels, setChannels] = useState<DistributionChannel[]>([]);
   const [sources, setSources] = useState<ResearchSource[]>([]);
   const [subproblemOpen, setSubproblemOpen] = useState(false);
+  const [channelOpen, setChannelOpen] = useState(false);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [sourceDraft, setSourceDraft] = useState(sourceBlank);
   const [subproblemName, setSubproblemName] = useState("");
+  const [channelName, setChannelName] = useState("");
   const [editingSource, setEditingSource] = useState<ResearchSource | null>(null);
   const [error, setError] = useState("");
 
   async function refresh() {
     try {
       setError("");
-      const [nextCounts, nextSubproblems, nextSources] = await Promise.all([
+      const [nextCounts, nextSubproblems, nextChannels, nextSources] = await Promise.all([
         getCounts(),
         listSubproblems(),
+        listChannels(),
         listSources(),
       ]);
       setCounts(nextCounts);
       setSubproblems(loadLocalCollection(localSubproblemsStorageKey, nextSubproblems, normalizeSubproblem));
+      setChannels(loadLocalCollection(localChannelsStorageKey, nextChannels, normalizeChannel));
       setSources(loadLocalCollection(localSourcesStorageKey, nextSources, normalizeSource));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load overview data");
@@ -95,10 +101,61 @@ export default function OverviewPage() {
     refresh();
   }
 
+  async function saveChannel(event: FormEvent) {
+    event.preventDefault();
+    if (!channelName.trim()) return;
+
+    if (!supabase) {
+      const nextChannels = [
+        ...channels,
+        {
+          id: `local-channel:${Date.now()}`,
+          name: channelName.trim(),
+          created_at: new Date().toISOString(),
+        },
+      ];
+      setChannels(nextChannels);
+      persistLocalCollection(localChannelsStorageKey, nextChannels);
+      setChannelName("");
+      setChannelOpen(false);
+      return;
+    }
+
+    const { error: saveError } = await supabase.from("distribution_channels").insert({ name: channelName.trim() });
+    if (saveError) {
+      setError(saveError.message);
+      return;
+    }
+    setChannelName("");
+    setChannelOpen(false);
+    refresh();
+  }
+
+  async function deleteChannel(id: string) {
+    if (!supabase) {
+      const nextChannels = channels.filter((item) => item.id !== id);
+      setChannels(nextChannels);
+      persistLocalCollection(localChannelsStorageKey, nextChannels);
+      return;
+    }
+
+    if (!window.confirm("Delete this channel?")) return;
+
+    const { error: deleteError } = await supabase.from("distribution_channels").delete().eq("id", id);
+    if (deleteError) setError(deleteError.message);
+    refresh();
+  }
+
   function openSource(source?: ResearchSource) {
     setEditingSource(source ?? null);
     setSourceDraft(source ? { title: source.title, description: source.description } : sourceBlank);
     setSourceOpen(true);
+  }
+
+  function closeSourceForm() {
+    setSourceOpen(false);
+    setEditingSource(null);
+    setSourceDraft(sourceBlank);
   }
 
   async function saveSource(event: FormEvent) {
@@ -189,6 +246,20 @@ export default function OverviewPage() {
             </Button>
           }
         />
+        {subproblemOpen ? (
+          <form className="mb-4 border border-zinc-200 bg-zinc-50 p-4" onSubmit={saveSubproblem}>
+            <Field label="Name">
+              <Input value={subproblemName} onChange={(event) => setSubproblemName(event.target.value)} placeholder="Contract velocity" />
+            </Field>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => {
+                setSubproblemName("");
+                setSubproblemOpen(false);
+              }}>Cancel</Button>
+              <Button type="submit">Save</Button>
+            </div>
+          </form>
+        ) : null}
         <div className="flex flex-wrap gap-2">
           {subproblems.map((item) => (
             <button key={item.id} className="group" onClick={() => deleteSubproblem(item.id)}>
@@ -197,6 +268,41 @@ export default function OverviewPage() {
           ))}
         </div>
         {!subproblems.length ? <EmptyState>No sub-problems yet. Add the first distribution atom.</EmptyState> : null}
+      </section>
+
+      <section className="border border-zinc-200 bg-white p-5">
+        <SectionHeader
+          label="Channels"
+          title="Distribution Channels"
+          action={
+            <Button onClick={() => setChannelOpen(true)}>
+              <Plus size={14} />
+              Add
+            </Button>
+          }
+        />
+        {channelOpen ? (
+          <form className="mb-4 border border-zinc-200 bg-zinc-50 p-4" onSubmit={saveChannel}>
+            <Field label="Name">
+              <Input value={channelName} onChange={(event) => setChannelName(event.target.value)} placeholder="Gmail" />
+            </Field>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => {
+                setChannelName("");
+                setChannelOpen(false);
+              }}>Cancel</Button>
+              <Button type="submit">Save</Button>
+            </div>
+          </form>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {channels.map((item) => (
+            <button key={item.id} className="group" onClick={() => deleteChannel(item.id)}>
+              <Pill className="group-hover:border-black group-hover:text-black">{item.name} <span className="ml-2 text-zinc-500">×</span></Pill>
+            </button>
+          ))}
+        </div>
+        {!channels.length ? <EmptyState>No channels yet. Add Gmail, LinkedIn, events, or any active channel.</EmptyState> : null}
       </section>
 
       <section className="border border-zinc-200 bg-white p-5">
@@ -210,6 +316,20 @@ export default function OverviewPage() {
             </Button>
           }
         />
+        {sourceOpen ? (
+          <form className="mb-4 grid gap-4 border border-zinc-200 bg-zinc-50 p-4" onSubmit={saveSource}>
+            <Field label="Title">
+              <Input value={sourceDraft.title} onChange={(event) => setSourceDraft({ ...sourceDraft, title: event.target.value })} />
+            </Field>
+            <Field label="Description">
+              <Textarea value={sourceDraft.description} onChange={(event) => setSourceDraft({ ...sourceDraft, description: event.target.value })} />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={closeSourceForm}>Cancel</Button>
+              <Button type="submit">Save</Button>
+            </div>
+          </form>
+        ) : null}
         <div className="grid gap-3 md:grid-cols-4">
           {sources.map((source) => (
             <article key={source.id} className="border border-zinc-200 bg-white p-4">
@@ -230,33 +350,6 @@ export default function OverviewPage() {
         </div>
         {!sources.length ? <EmptyState>No source categories yet.</EmptyState> : null}
       </section>
-
-      <Modal title="Add Sub-Problem" open={subproblemOpen} onClose={() => setSubproblemOpen(false)}>
-        <form className="grid gap-4" onSubmit={saveSubproblem}>
-          <Field label="Name">
-            <Input value={subproblemName} onChange={(event) => setSubproblemName(event.target.value)} placeholder="Contract velocity" />
-          </Field>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setSubproblemOpen(false)}>Cancel</Button>
-            <Button type="submit">Save</Button>
-          </div>
-        </form>
-      </Modal>
-
-      <Modal title={editingSource ? "Edit Source Category" : "Add Source Category"} open={sourceOpen} onClose={() => setSourceOpen(false)}>
-        <form className="grid gap-4" onSubmit={saveSource}>
-          <Field label="Title">
-            <Input value={sourceDraft.title} onChange={(event) => setSourceDraft({ ...sourceDraft, title: event.target.value })} />
-          </Field>
-          <Field label="Description">
-            <Textarea value={sourceDraft.description} onChange={(event) => setSourceDraft({ ...sourceDraft, description: event.target.value })} />
-          </Field>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setSourceOpen(false)}>Cancel</Button>
-            <Button type="submit">Save</Button>
-          </div>
-        </form>
-      </Modal>
     </div>
   );
 }
@@ -288,6 +381,15 @@ function normalizeSubproblem(value: unknown): Subproblem {
   const row = value && typeof value === "object" ? value as Partial<Subproblem> : {};
   return {
     id: String(row.id || `local-subproblem:${Date.now()}`),
+    name: String(row.name || ""),
+    created_at: String(row.created_at || new Date().toISOString()),
+  };
+}
+
+function normalizeChannel(value: unknown): DistributionChannel {
+  const row = value && typeof value === "object" ? value as Partial<DistributionChannel> : {};
+  return {
+    id: String(row.id || `local-channel:${Date.now()}`),
     name: String(row.name || ""),
     created_at: String(row.created_at || new Date().toISOString()),
   };
