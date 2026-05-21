@@ -446,7 +446,13 @@ function rateFromEvidence(value: string | null) {
 }
 
 function isDraftRow(row: MatrixRow) {
-  return Boolean(row.custom && !rowHasContent(row));
+  return Boolean(
+    row.custom &&
+      !row.strategy.trim() &&
+      !row.process.trim() &&
+      !row.channels.trim() &&
+      !row.output.trim(),
+  );
 }
 
 function customRowTimestamp(rowId: string) {
