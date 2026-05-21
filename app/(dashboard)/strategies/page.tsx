@@ -163,7 +163,7 @@ export default function StrategiesPage() {
         process: relatedProcesses.length ? relatedProcesses.join(", ") : "Unmapped",
         channels: strategy.channel_mechanism || strategy.strategy_category || "Not documented",
         output: strategy.primary_metric || strategy.landmark_example || "Not documented",
-        rate: rowRatings[id] ?? "",
+        rate: rowRatings[id] ?? rateFromEvidence(strategy.evidence_quality),
       };
     });
 
@@ -182,8 +182,15 @@ export default function StrategiesPage() {
     return [...sourceRows, ...visibleCustomRows]
       .filter((row) => !hiddenRows.includes(row.id))
       .sort((left, right) => {
-        if (left.custom !== right.custom) return left.custom ? -1 : 1;
-        return Number(right.rate || 0) - Number(left.rate || 0);
+        const leftDraft = isDraftRow(left);
+        const rightDraft = isDraftRow(right);
+        if (leftDraft !== rightDraft) return leftDraft ? -1 : 1;
+
+        const ratingDifference = Number(right.rate || 0) - Number(left.rate || 0);
+        if (ratingDifference) return ratingDifference;
+
+        if (left.custom && right.custom) return customRowTimestamp(right.id) - customRowTimestamp(left.id);
+        return 0;
       });
   }, [customRows, filtered, filter, hiddenRows, models, processes, rowRatings, search]);
 
@@ -431,6 +438,20 @@ function normalizeRate(value: string) {
   const digits = value.replace(/\D/g, "");
   if (!digits) return "";
   return String(Math.min(10, Number(digits)));
+}
+
+function rateFromEvidence(value: string | null) {
+  const match = value?.match(/Rate:\s*(\d+)/i);
+  return match ? normalizeRate(match[1]) : "";
+}
+
+function isDraftRow(row: MatrixRow) {
+  return Boolean(row.custom && !rowHasContent(row));
+}
+
+function customRowTimestamp(rowId: string) {
+  const timestamp = Number(rowId.replace("custom:", ""));
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function persistCustomRows(rows: MatrixRow[]) {
