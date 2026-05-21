@@ -11,6 +11,7 @@ import type { Counts } from "@/lib/types";
 const tabs = [
   { href: "/", label: "Overview" },
   { href: "/business-models", label: "Business Models" },
+  { href: "/funnel", label: "Funnel" },
   { href: "/strategies", label: "Strategies" },
   { href: "/atomic-processes", label: "Atomic Processes" },
   { href: "/shortlist", label: "Priority 1 Shortlist" },
