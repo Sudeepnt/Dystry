@@ -89,7 +89,7 @@ export default function AtomicProcessesPage() {
             setCustomRows(parsedRows);
             window.localStorage.setItem(atomicCustomRowsStorageKey, JSON.stringify(parsedRows));
           } else {
-            migrateLocalRows(parsedRows);
+            window.localStorage.removeItem(atomicCustomRowsStorageKey);
           }
         }
       } catch {
@@ -110,8 +110,6 @@ export default function AtomicProcessesPage() {
     }
 
     refresh();
-  // Runs once to hydrate browser-local rows and migrate them when Supabase is available.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const tableRows = useMemo(() => {
@@ -340,60 +338,6 @@ export default function AtomicProcessesPage() {
     }
   }
 
-  async function migrateLocalRows(rows: AtomicTableRow[]) {
-    if (!supabase || !rows.length) return;
-
-    const createdIds: string[] = [];
-
-    for (const [index, row] of rows.entries()) {
-      const createdAt = new Date().toISOString();
-      const titleBase = row.productBrief.trim() || `Untitled atomic process ${createdAt}`;
-      const { data, error: insertError } = await supabase
-        .from("atomic_processes")
-        .insert({
-          title: `${titleBase.slice(0, 120)} (${Date.now()}-${index})`,
-          product_brief: row.productBrief.trim(),
-          input_text: row.input,
-          action_text: row.action,
-          output_text: row.output,
-          stage: normalizeStage(row.stage),
-          pain_frequency: row.ratings.pain_frequency,
-          software_replaceability: row.ratings.software_replaceability,
-          willingness_to_pay: row.ratings.willingness_to_pay,
-          composability: row.ratings.composability,
-          shortlisted: Boolean(row.shortlisted),
-        })
-        .select("id")
-        .single();
-
-      if (insertError || !data) {
-        setError(insertError?.message ?? "Unable to migrate local atomic process rows to Supabase");
-        return;
-      }
-
-      createdIds.push(data.id);
-
-      if (row.linkedModelIds?.length) {
-        const relationResult = await supabase.from("atomic_process_business_models").insert(
-          row.linkedModelIds.map((modelId) => ({
-            atomic_process_id: data.id,
-            business_model_id: modelId,
-          })),
-        );
-
-        if (relationResult.error) {
-          setError(relationResult.error.message);
-          return;
-        }
-      }
-    }
-
-    window.localStorage.removeItem(atomicCustomRowsStorageKey);
-    setCustomRows([]);
-    setFreshProcessIds((current) => [...createdIds, ...current.filter((id) => !createdIds.includes(id))]);
-    refresh();
-  }
-
   function deleteCustomRow(rowId: string) {
     const nextRows = customRows.filter((row) => row.id !== rowId);
     setCustomRows(nextRows);
@@ -402,7 +346,6 @@ export default function AtomicProcessesPage() {
 
   async function deleteSourceRow(row: AtomicTableRow) {
     if (!row.processId || !supabase) return;
-    if (!window.confirm("Delete this atomic process?")) return;
 
     const previousProcesses = processes;
     setProcesses((currentProcesses) => currentProcesses.filter((process) => process.id !== row.processId));

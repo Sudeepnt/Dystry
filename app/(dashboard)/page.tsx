@@ -94,8 +94,6 @@ export default function OverviewPage() {
       return;
     }
 
-    if (!window.confirm("Delete this sub-problem?")) return;
-
     const { error: deleteError } = await supabase.from("overview_subproblems").delete().eq("id", id);
     if (deleteError) setError(deleteError.message);
     refresh();
@@ -138,8 +136,6 @@ export default function OverviewPage() {
       persistLocalCollection(localChannelsStorageKey, nextChannels);
       return;
     }
-
-    if (!window.confirm("Delete this channel?")) return;
 
     const { error: deleteError } = await supabase.from("distribution_channels").delete().eq("id", id);
     if (deleteError) setError(deleteError.message);
@@ -208,8 +204,6 @@ export default function OverviewPage() {
       persistLocalCollection(localSourcesStorageKey, nextSources);
       return;
     }
-
-    if (!window.confirm("Delete this source category?")) return;
 
     const { error: deleteError } = await supabase.from("research_sources").delete().eq("id", id);
     if (deleteError) setError(deleteError.message);

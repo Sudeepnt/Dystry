@@ -120,7 +120,7 @@ export default function BusinessModelsPage() {
   }
 
   async function deleteModel(id: string) {
-    if (!supabase || !window.confirm("Delete this business model category?")) return;
+    if (!supabase) return;
     const { error: deleteError } = await supabase.from("business_models").delete().eq("id", id);
     if (deleteError) setError(deleteError.message);
     refresh();

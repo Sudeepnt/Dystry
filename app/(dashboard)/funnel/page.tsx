@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { HandCoins, MessageCircleMore, Search } from "lucide-react";
+import { HandCoins, MessageCircleMore, Repeat2, Search, Share2 } from "lucide-react";
 import { listFunnelNotes } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import { ErrorState } from "@/components/ui";
 
 type FunnelStage = {
-  id: "lead-generation" | "lead-nurturing" | "action-sell";
+  id: "lead-generation" | "lead-nurturing" | "action-sell" | "retention" | "referral";
   title: string;
   placeholder: string;
   icon: React.ReactNode;
@@ -18,6 +18,8 @@ const blankNotes: Record<FunnelStage["id"], string> = {
   "lead-generation": "",
   "lead-nurturing": "",
   "action-sell": "",
+  retention: "",
+  referral: "",
 };
 
 const stages: FunnelStage[] = [
@@ -38,6 +40,18 @@ const stages: FunnelStage[] = [
     title: "Action / Sell",
     placeholder: "Write close actions, offers, demos, sales moments, or conversion steps here.",
     icon: <HandCoins size={22} />,
+  },
+  {
+    id: "retention",
+    title: "Retention",
+    placeholder: "Write onboarding, activation, repeat-use, renewal, or customer success ideas here.",
+    icon: <Repeat2 size={22} />,
+  },
+  {
+    id: "referral",
+    title: "Referral",
+    placeholder: "Write referral loops, sharing moments, incentives, partner intros, or word-of-mouth ideas here.",
+    icon: <Share2 size={22} />,
   },
 ];
 
@@ -114,7 +128,7 @@ export default function FunnelPage() {
   return (
     <section className="border border-zinc-200 bg-white p-5">
       <p className="mb-2 text-[12px] text-zinc-500">Funnel</p>
-      <h1 className="text-base font-medium text-black">Distribution Funnel</h1>
+      <h1 className="text-base font-medium text-black">Customer journey</h1>
       {error ? <div className="mt-4"><ErrorState message={error} /></div> : null}
 
       <div className="mt-8 grid grid-cols-[74px_minmax(0,1fr)] gap-x-7">
