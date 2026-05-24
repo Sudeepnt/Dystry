@@ -264,8 +264,8 @@ export function SectionHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="mb-4 flex items-end justify-between gap-4">
-      <div>
+    <div className="mb-4 flex flex-wrap items-end justify-between gap-3 sm:gap-4">
+      <div className="min-w-0">
         {label ? <p className="mb-1 text-[12px] text-zinc-500">{label}</p> : null}
         <h2 className="text-base font-medium text-black">{title}</h2>
       </div>

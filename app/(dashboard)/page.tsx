@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { Plus, Pencil, Trash2 } from "lucide-react";
-import { getCounts, listChannels, listSources, listSubproblems } from "@/lib/data";
+import { getCachedData, getCounts, invalidateDataCache, listChannels, listSources, listSubproblems } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import type { Counts, DistributionChannel, ResearchSource, Subproblem } from "@/lib/types";
 import { Button, EmptyState, ErrorState, Field, Input, SectionHeader, StatCard, Textarea, Pill } from "@/components/ui";
@@ -16,15 +16,15 @@ const localChannelsStorageKey = "dystry.overview.channels";
 const localSourcesStorageKey = "dystry.overview.sources";
 
 export default function OverviewPage() {
-  const [counts, setCounts] = useState<Counts>({
+  const [counts, setCounts] = useState<Counts>(() => getCachedData<Counts>("counts") ?? {
     businessModels: 0,
     strategies: 0,
     atomicProcesses: 0,
     shortlisted: 0,
   });
-  const [subproblems, setSubproblems] = useState<Subproblem[]>([]);
-  const [channels, setChannels] = useState<DistributionChannel[]>([]);
-  const [sources, setSources] = useState<ResearchSource[]>([]);
+  const [subproblems, setSubproblems] = useState<Subproblem[]>(() => getCachedData<Subproblem[]>("subproblems") ?? []);
+  const [channels, setChannels] = useState<DistributionChannel[]>(() => getCachedData<DistributionChannel[]>("channels") ?? []);
+  const [sources, setSources] = useState<ResearchSource[]>(() => getCachedData<ResearchSource[]>("sources") ?? []);
   const [subproblemOpen, setSubproblemOpen] = useState(false);
   const [channelOpen, setChannelOpen] = useState(false);
   const [sourceOpen, setSourceOpen] = useState(false);
@@ -83,6 +83,7 @@ export default function OverviewPage() {
     }
     setSubproblemName("");
     setSubproblemOpen(false);
+    invalidateDataCache("subproblems");
     refresh();
   }
 
@@ -96,6 +97,7 @@ export default function OverviewPage() {
 
     const { error: deleteError } = await supabase.from("overview_subproblems").delete().eq("id", id);
     if (deleteError) setError(deleteError.message);
+    invalidateDataCache("subproblems");
     refresh();
   }
 
@@ -126,6 +128,7 @@ export default function OverviewPage() {
     }
     setChannelName("");
     setChannelOpen(false);
+    invalidateDataCache("channels");
     refresh();
   }
 
@@ -139,6 +142,7 @@ export default function OverviewPage() {
 
     const { error: deleteError } = await supabase.from("distribution_channels").delete().eq("id", id);
     if (deleteError) setError(deleteError.message);
+    invalidateDataCache("channels");
     refresh();
   }
 
@@ -194,6 +198,7 @@ export default function OverviewPage() {
     setSourceOpen(false);
     setEditingSource(null);
     setSourceDraft(sourceBlank);
+    invalidateDataCache("sources");
     refresh();
   }
 
@@ -207,6 +212,7 @@ export default function OverviewPage() {
 
     const { error: deleteError } = await supabase.from("research_sources").delete().eq("id", id);
     if (deleteError) setError(deleteError.message);
+    invalidateDataCache("sources");
     refresh();
   }
 

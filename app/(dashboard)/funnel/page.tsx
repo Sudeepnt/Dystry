@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { HandCoins, MessageCircleMore, Repeat2, Search, Share2 } from "lucide-react";
-import { listFunnelNotes } from "@/lib/data";
+import { getCachedData, invalidateDataCache, listFunnelNotes } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
+import type { FunnelNote } from "@/lib/types";
 import { ErrorState } from "@/components/ui";
 
 type FunnelStage = {
@@ -56,7 +57,7 @@ const stages: FunnelStage[] = [
 ];
 
 export default function FunnelPage() {
-  const [notes, setNotes] = useState<Record<FunnelStage["id"], string>>(blankNotes);
+  const [notes, setNotes] = useState<Record<FunnelStage["id"], string>>(() => notesFromRows(getCachedData<FunnelNote[]>("funnelNotes") ?? []));
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -80,10 +81,7 @@ export default function FunnelPage() {
     try {
       setError("");
       const rows = await listFunnelNotes();
-      const nextNotes = rows.reduce<Record<FunnelStage["id"], string>>((current, row) => {
-        if (isFunnelStageId(row.stage)) current[row.stage] = row.content;
-        return current;
-      }, { ...blankNotes });
+      const nextNotes = notesFromRows(rows);
 
       const saved = window.localStorage.getItem(storageKey);
       if (saved && !rows.length) {
@@ -120,37 +118,36 @@ export default function FunnelPage() {
     try {
       setError("");
       await saveStageToSupabase(stageId, value);
+      invalidateDataCache("funnelNotes");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save funnel note");
     }
   }
 
   return (
-    <section className="border border-zinc-200 bg-white p-5">
+    <section className="border border-zinc-200 bg-white p-4 sm:p-5">
       <p className="mb-2 text-[12px] text-zinc-500">Funnel</p>
       <h1 className="text-base font-medium text-black">Customer journey</h1>
       {error ? <div className="mt-4"><ErrorState message={error} /></div> : null}
 
-      <div className="mt-8 grid grid-cols-[74px_minmax(0,1fr)] gap-x-7">
-        <div className="relative col-start-1 row-start-1 row-end-4">
-          <div className="absolute left-[36px] top-3 h-[calc(100%-1.5rem)] w-px bg-zinc-300" />
-        </div>
+      <div className="relative mt-5 sm:mt-8">
+        <div className="absolute bottom-8 left-[12px] top-2 w-px bg-zinc-300 sm:bottom-11 sm:left-[36px] sm:top-3" />
 
         {stages.map((stage) => (
-          <div key={stage.id} className="contents">
-            <div className="relative col-start-1 flex justify-center">
-              <div className="z-10 flex h-14 w-14 items-center justify-center border border-zinc-200 bg-white text-black">
+          <div key={stage.id} className="relative grid grid-cols-[24px_minmax(0,1fr)] gap-x-2 sm:grid-cols-[74px_minmax(0,1fr)] sm:gap-x-7">
+            <div className="col-start-1 row-start-1 flex justify-center">
+              <div className="z-10 flex h-6 w-6 items-center justify-center border border-zinc-200 bg-white text-black [&_svg]:h-3.5 [&_svg]:w-3.5 sm:h-14 sm:w-14 sm:[&_svg]:h-[22px] sm:[&_svg]:w-[22px]">
                 {stage.icon}
               </div>
             </div>
-            <div className="col-start-2 mb-9">
-              <h2 className="mb-4 text-lg font-medium text-black">{stage.title}</h2>
+            <div className="col-span-2 col-start-1 row-start-2 mb-5 mt-2 sm:col-span-1 sm:col-start-2 sm:row-start-1 sm:mb-9 sm:mt-0">
+              <h2 className="-mt-8 mb-3 pl-8 text-sm font-medium text-black sm:mt-0 sm:mb-4 sm:pl-0 sm:text-lg">{stage.title}</h2>
               <textarea
                 value={notes[stage.id]}
                 onChange={(event) => updateStage(stage.id, event.target.value)}
                 onBlur={(event) => saveStage(stage.id, event.target.value)}
                 placeholder={stage.placeholder}
-                className="h-64 w-full resize-none overflow-y-auto border border-zinc-300 bg-white p-4 text-sm leading-6 text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-black"
+                className="h-44 w-full resize-none overflow-y-auto border border-zinc-300 bg-white p-3 text-[13px] leading-5 text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-black sm:h-64 sm:p-4 sm:text-sm sm:leading-6"
               />
             </div>
           </div>
@@ -162,6 +159,13 @@ export default function FunnelPage() {
 
 function isFunnelStageId(value: string): value is FunnelStage["id"] {
   return stages.some((stage) => stage.id === value);
+}
+
+function notesFromRows(rows: FunnelNote[]) {
+  return rows.reduce<Record<FunnelStage["id"], string>>((current, row) => {
+    if (isFunnelStageId(row.stage)) current[row.stage] = row.content;
+    return current;
+  }, { ...blankNotes });
 }
 
 async function saveStageToSupabase(stage: FunnelStage["id"], content: string) {

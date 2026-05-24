@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Heart, Plus, Search, Trash2 } from "lucide-react";
-import { listAtomicProcesses, listBusinessModels, relationTitles } from "@/lib/data";
+import { getCachedData, invalidateDataCache, listAtomicProcesses, listBusinessModels, relationTitles } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import type { AtomicProcess, BusinessModel } from "@/lib/types";
 import { Button, EmptyState, ErrorState, Input, MultiSelect, Pill, SectionHeader, Select } from "@/components/ui";
@@ -42,8 +42,8 @@ const atomicCustomRowsStorageKey = "dystry.atomic.customRows";
 const atomicStageStorageKey = "dystry.atomic.tableStages";
 
 export default function AtomicProcessesPage() {
-  const [processes, setProcesses] = useState<AtomicProcess[]>([]);
-  const [models, setModels] = useState<BusinessModel[]>([]);
+  const [processes, setProcesses] = useState<AtomicProcess[]>(() => getCachedData<AtomicProcess[]>("atomicProcesses") ?? []);
+  const [models, setModels] = useState<BusinessModel[]>(() => getCachedData<BusinessModel[]>("businessModels") ?? []);
   const [customRows, setCustomRows] = useState<AtomicTableRow[]>([]);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
@@ -180,6 +180,7 @@ export default function AtomicProcessesPage() {
       }
 
       if (data) {
+        invalidateDataCache("atomicProcesses", "counts");
         setFreshProcessIds((current) => [data.id, ...current.filter((id) => id !== data.id)]);
         setProcesses((current) => [data, ...current]);
       }
@@ -225,7 +226,11 @@ export default function AtomicProcessesPage() {
     );
 
     const { error: updateError } = await supabase.from("atomic_processes").update({ [field]: numericValue }).eq("id", processId);
-    if (updateError) setError(updateError.message);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    invalidateDataCache("atomicProcesses");
   }
 
   function updateCustomRow(rowId: string, update: (row: AtomicTableRow) => AtomicTableRow) {
@@ -258,7 +263,11 @@ export default function AtomicProcessesPage() {
     );
 
     const { error: updateError } = await supabase.from("atomic_processes").update({ stage: nextStage }).eq("id", processId);
-    if (updateError) setError(updateError.message);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    invalidateDataCache("atomicProcesses");
   }
 
   function updateSourceText(processId: string, field: "productBrief" | "input" | "action" | "output", value: string) {
@@ -290,7 +299,11 @@ export default function AtomicProcessesPage() {
             : { output_text: value };
 
     const { error: updateError } = await supabase.from("atomic_processes").update(payload).eq("id", processId);
-    if (updateError) setError(updateError.message);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    invalidateDataCache("atomicProcesses");
   }
 
   async function updateSourceRowModels(row: AtomicTableRow, modelIds: string[]) {
@@ -336,6 +349,7 @@ export default function AtomicProcessesPage() {
         return;
       }
     }
+    invalidateDataCache("atomicProcesses");
   }
 
   function deleteCustomRow(rowId: string) {
@@ -354,7 +368,9 @@ export default function AtomicProcessesPage() {
     if (deleteError) {
       setProcesses(previousProcesses);
       setError(deleteError.message);
+      return;
     }
+    invalidateDataCache("atomicProcesses", "counts");
   }
 
   async function toggleShortlist(row: AtomicTableRow) {
@@ -376,6 +392,7 @@ export default function AtomicProcessesPage() {
     setProcesses((currentProcesses) =>
       currentProcesses.map((process) => (process.id === row.processId ? { ...process, shortlisted } : process)),
     );
+    invalidateDataCache("atomicProcesses", "counts");
   }
 
   return (
@@ -387,12 +404,12 @@ export default function AtomicProcessesPage() {
           <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={15} />
           <Input className="h-12 w-full border-0 pl-11" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search atomic process text" />
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => setFilter("all")}>
+        <div className="dashboard-mobile-scroll -mx-4 flex snap-x snap-mandatory flex-nowrap gap-2 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0">
+          <button className="shrink-0 snap-start" onClick={() => setFilter("all")}>
             <Pill className={filter === "all" ? "border-black bg-white text-black" : "hover:border-black hover:text-black"}>All Models</Pill>
           </button>
           {models.map((model) => (
-            <button key={model.id} onClick={() => setFilter(model.id)}>
+            <button key={model.id} className="shrink-0 snap-start" onClick={() => setFilter(model.id)}>
               <Pill className={filter === model.id ? "border-black bg-white text-black" : "hover:border-black hover:text-black"}>{model.title}</Pill>
             </button>
           ))}
@@ -410,7 +427,7 @@ export default function AtomicProcessesPage() {
             </Button>
           }
         />
-        <div className="overflow-x-auto border border-zinc-200 bg-white">
+        <div className="dashboard-mobile-scroll relative left-1/2 w-screen -translate-x-1/2 overflow-x-auto border-y border-zinc-200 bg-white sm:left-auto sm:w-auto sm:translate-x-0 sm:border">
           <table className="min-w-[1428px] w-full table-fixed border-collapse text-left text-sm">
             <colgroup>
               <col className="w-[220px]" />

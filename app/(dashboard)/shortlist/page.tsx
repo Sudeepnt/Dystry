@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Heart, Plus } from "lucide-react";
-import { listAtomicProcesses, relationTitles } from "@/lib/data";
+import { getCachedData, invalidateDataCache, listAtomicProcesses, relationTitles } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import type { AtomicProcess } from "@/lib/types";
 import { Button, EmptyState, ErrorState, Pill, ScoreBar, SectionHeader } from "@/components/ui";
@@ -27,7 +27,9 @@ type CustomAtomicRow = {
 const atomicCustomRowsStorageKey = "dystry.atomic.customRows";
 
 export default function ShortlistPage() {
-  const [processes, setProcesses] = useState<AtomicProcess[]>([]);
+  const [processes, setProcesses] = useState<AtomicProcess[]>(() =>
+    (getCachedData<AtomicProcess[]>("atomicProcesses") ?? []).filter((process) => process.shortlisted),
+  );
   const [customRows, setCustomRows] = useState<CustomAtomicRow[]>([]);
   const [error, setError] = useState("");
 
@@ -61,6 +63,7 @@ export default function ShortlistPage() {
     if (!supabase) return;
     const { error: updateError } = await supabase.from("atomic_processes").update({ shortlisted: false }).eq("id", process.id);
     if (updateError) setError(updateError.message);
+    invalidateDataCache("atomicProcesses", "counts");
     refresh();
   }
 

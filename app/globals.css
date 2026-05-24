@@ -29,6 +29,15 @@ select {
   font: inherit;
 }
 
+.dashboard-mobile-scroll {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.dashboard-mobile-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 ::selection {
   background: #0a0a0a;
   color: #fff;

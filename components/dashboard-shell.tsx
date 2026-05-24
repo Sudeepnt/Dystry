@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import { getCounts } from "@/lib/data";
+import { getCachedData, getCounts, invalidateDataCache } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import type { Counts } from "@/lib/types";
 
@@ -34,7 +34,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [pages, setPages] = useState<AnimatedPage[]>([
     { key: pathname, node: children, phase: "idle", direction: "left" },
   ]);
-  const [counts, setCounts] = useState<Counts>({
+  const [counts, setCounts] = useState<Counts>(() => getCachedData<Counts>("counts") ?? {
     businessModels: 0,
     strategies: 0,
     atomicProcesses: 0,
@@ -51,6 +51,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       if (mounted) setCounts(nextCounts);
     }
 
+    async function refreshFromDatabase() {
+      invalidateDataCache("counts");
+      await refresh();
+    }
+
     refresh();
 
     const client = supabase;
@@ -61,9 +66,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
     const channel = client
       .channel("dashboard-counts")
-      .on("postgres_changes", { event: "*", schema: "public", table: "business_models" }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "strategies" }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "atomic_processes" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "business_models" }, refreshFromDatabase)
+      .on("postgres_changes", { event: "*", schema: "public", table: "strategies" }, refreshFromDatabase)
+      .on("postgres_changes", { event: "*", schema: "public", table: "atomic_processes" }, refreshFromDatabase)
       .subscribe();
 
     return () => {
@@ -113,23 +118,23 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
   return (
     <main className="min-h-screen bg-white text-zinc-900">
-      <div className="mx-auto max-w-[1500px] px-6">
-        <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white pb-4 pt-5">
+      <div className="mx-auto max-w-[1500px] px-4 sm:px-6">
+        <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white pb-3 pt-4 sm:pb-4 sm:pt-5">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <div className="text-3xl font-semibold tracking-tight text-black">DYSTRY</div>
-              <div className="mt-1 text-xs text-zinc-500">
+              <div className="text-2xl font-semibold tracking-tight text-black sm:text-3xl">DYSTRY</div>
+              <div className="mt-1 hidden text-xs text-zinc-500 sm:block">
                 PHASE 0 · DISTRIBUTION BIBLE · V1.0 · MAY 2026
               </div>
             </div>
-            <div className="text-right text-xs leading-6 text-zinc-500">
+            <div className="hidden text-right text-xs leading-6 text-zinc-500 sm:block">
               <span className="text-black">{counts.businessModels}</span> business models ·{" "}
               <span className="text-black">{counts.strategies}</span> distribution strategies ·{" "}
               <span className="text-black">{counts.atomicProcesses}</span> atomic processes ·{" "}
               <span className="text-black">{counts.shortlisted}</span> Priority 1 shortlisted
             </div>
           </div>
-          <nav className="mt-5 flex flex-wrap items-center gap-0 border-y border-zinc-200 bg-white">
+          <nav className="dashboard-mobile-scroll -mx-4 mt-4 flex snap-x snap-mandatory flex-nowrap items-center gap-0 overflow-x-auto border-y border-zinc-200 bg-white px-4 sm:mx-0 sm:mt-5 sm:flex-wrap sm:px-0">
             {tabs.map((tab) => {
               const active = pathname === tab.href;
               return (
@@ -137,7 +142,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                   key={tab.href}
                   href={tab.href}
                   className={clsx(
-                    "border-b-2 px-7 py-4 text-[13px] uppercase tracking-[0.24em] transition",
+                    "shrink-0 snap-start whitespace-nowrap border-b-2 px-5 py-4 text-[12px] uppercase tracking-[0.18em] transition sm:px-7 sm:text-[13px] sm:tracking-[0.24em]",
                     active
                       ? "border-black text-black"
                       : "border-transparent text-zinc-400 hover:text-black",

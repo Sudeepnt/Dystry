@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { listBusinessModels } from "@/lib/data";
+import { getCachedData, invalidateDataCache, listBusinessModels } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import type { BusinessModel } from "@/lib/types";
 import { Button, EmptyState, ErrorState, Field, Input, Modal, Pill, SectionHeader, Textarea } from "@/components/ui";
@@ -30,7 +30,7 @@ const blankDraft: BusinessModelDraft = {
 };
 
 export default function BusinessModelsPage() {
-  const [models, setModels] = useState<BusinessModel[]>([]);
+  const [models, setModels] = useState<BusinessModel[]>(() => getCachedData<BusinessModel[]>("businessModels") ?? []);
   const [expanded, setExpanded] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<BusinessModel | null>(null);
@@ -116,6 +116,7 @@ export default function BusinessModelsPage() {
     setOpen(false);
     setEditing(null);
     setDraft(blankDraft);
+    invalidateDataCache("businessModels", "strategies", "atomicProcesses", "counts");
     refresh();
   }
 
@@ -123,6 +124,7 @@ export default function BusinessModelsPage() {
     if (!supabase) return;
     const { error: deleteError } = await supabase.from("business_models").delete().eq("id", id);
     if (deleteError) setError(deleteError.message);
+    invalidateDataCache("businessModels", "strategies", "atomicProcesses", "counts");
     refresh();
   }
 

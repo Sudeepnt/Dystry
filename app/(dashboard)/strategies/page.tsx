@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, Trash2 } from "lucide-react";
-import { listAtomicProcesses, listBusinessModels, listStrategies } from "@/lib/data";
+import { getCachedData, invalidateDataCache, listAtomicProcesses, listBusinessModels, listStrategies } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 import type { AtomicProcess, BusinessModel, Strategy } from "@/lib/types";
 import { Button, EmptyState, ErrorState, Input, MultiSelect, Pill, SectionHeader, Select } from "@/components/ui";
@@ -39,9 +39,9 @@ const rowFields: Array<keyof Pick<MatrixRow, "businessModel" | "strategy" | "pro
 ];
 
 export default function StrategiesPage() {
-  const [strategies, setStrategies] = useState<Strategy[]>([]);
-  const [processes, setProcesses] = useState<AtomicProcess[]>([]);
-  const [models, setModels] = useState<BusinessModel[]>([]);
+  const [strategies, setStrategies] = useState<Strategy[]>(() => getCachedData<Strategy[]>("strategies") ?? []);
+  const [processes, setProcesses] = useState<AtomicProcess[]>(() => getCachedData<AtomicProcess[]>("atomicProcesses") ?? []);
+  const [models, setModels] = useState<BusinessModel[]>(() => getCachedData<BusinessModel[]>("businessModels") ?? []);
   const [tableHeadings, setTableHeadings] = useState(defaultTableHeadings);
   const [customRows, setCustomRows] = useState<MatrixRow[]>([]);
   const [rowRatings, setRowRatings] = useState<Record<string, string>>({});
@@ -281,6 +281,7 @@ export default function StrategiesPage() {
       }
     }
 
+    invalidateDataCache("strategies");
     refresh();
   }
 
@@ -302,7 +303,9 @@ export default function StrategiesPage() {
     if (updateError) {
       setStrategies(previousStrategies);
       setError(updateError.message);
+      return;
     }
+    invalidateDataCache("strategies");
   }
 
   function deleteRow(row: MatrixRow) {
@@ -327,12 +330,12 @@ export default function StrategiesPage() {
           <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={15} />
           <Input className="h-12 w-full border-0 pl-11" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search strategy title or text" />
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => setFilter("all")}>
+        <div className="dashboard-mobile-scroll -mx-4 flex snap-x snap-mandatory flex-nowrap gap-2 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0">
+          <button className="shrink-0 snap-start" onClick={() => setFilter("all")}>
             <Pill className={filter === "all" ? "border-black bg-white text-black" : "hover:border-black hover:text-black"}>All Models</Pill>
           </button>
           {models.map((model) => (
-            <button key={model.id} onClick={() => setFilter(model.id)}>
+            <button key={model.id} className="shrink-0 snap-start" onClick={() => setFilter(model.id)}>
               <Pill className={filter === model.id ? "border-black bg-white text-black" : "hover:border-black hover:text-black"}>{model.title}</Pill>
             </button>
           ))}
@@ -350,7 +353,7 @@ export default function StrategiesPage() {
             </Button>
           }
         />
-        <div className="overflow-x-auto border border-zinc-200 bg-white">
+        <div className="dashboard-mobile-scroll relative left-1/2 w-screen -translate-x-1/2 overflow-x-auto border-y border-zinc-200 bg-white sm:left-auto sm:w-auto sm:translate-x-0 sm:border">
           <table className="min-w-[1100px] w-full table-fixed border-collapse text-left text-sm">
             <colgroup>
               <col className="w-[240px]" />
