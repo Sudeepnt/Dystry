@@ -86,7 +86,8 @@ export async function listStrategies(): Promise<Strategy[]> {
 export async function listAtomicProcesses(shortlistedOnly = false): Promise<AtomicProcess[]> {
   if (!supabase) {
     const sorted = [...fallbackAtomicProcesses].sort((left, right) => right.total_score - left.total_score);
-    return shortlistedOnly ? sorted.filter((process) => process.shortlisted) : sorted;
+    const rows = shortlistedOnly ? sorted.filter((process) => process.shortlisted) : sorted;
+    return dedupeAtomicProcesses(rows);
   }
   let query = supabase
     .from("atomic_processes")
@@ -98,9 +99,46 @@ export async function listAtomicProcesses(shortlistedOnly = false): Promise<Atom
 
   const { data, error } = await query;
   if (error) throw error;
-  return data ?? [];
+  return dedupeAtomicProcesses(data ?? []);
 }
 
 export function relationTitles<T extends { business_models?: { title: string } | null }>(relations?: T[]) {
   return relations?.map((relation) => relation.business_models?.title).filter(Boolean) as string[] ?? [];
+}
+
+function dedupeAtomicProcesses(rows: AtomicProcess[]) {
+  const byKey = new Map<string, AtomicProcess>();
+
+  for (const row of rows) {
+    const key = atomicProcessContentKey(row);
+    const existing = byKey.get(key);
+
+    if (!existing || shouldPreferAtomicProcess(row, existing)) {
+      byKey.set(key, row);
+    }
+  }
+
+  return [...byKey.values()];
+}
+
+function shouldPreferAtomicProcess(candidate: AtomicProcess, existing: AtomicProcess) {
+  if (candidate.shortlisted !== existing.shortlisted) return candidate.shortlisted;
+  if (candidate.total_score !== existing.total_score) return candidate.total_score > existing.total_score;
+  return new Date(candidate.created_at).getTime() < new Date(existing.created_at).getTime();
+}
+
+function atomicProcessContentKey(process: AtomicProcess) {
+  return [
+    process.product_brief,
+    process.input_text,
+    process.action_text,
+    process.output_text,
+    process.stage,
+    process.pain_frequency,
+    process.software_replaceability,
+    process.willingness_to_pay,
+    process.composability,
+  ]
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .join("\u001f");
 }

@@ -97,6 +97,19 @@ create table if not exists atomic_processes (
   created_at timestamptz not null default now()
 );
 
+create unique index if not exists atomic_processes_unique_content_idx
+on atomic_processes (
+  lower(btrim(coalesce(product_brief, ''))),
+  lower(btrim(coalesce(input_text, ''))),
+  lower(btrim(coalesce(action_text, ''))),
+  lower(btrim(coalesce(output_text, ''))),
+  lower(btrim(coalesce(stage, ''))),
+  pain_frequency,
+  software_replaceability,
+  willingness_to_pay,
+  composability
+);
+
 create table if not exists atomic_process_business_models (
   id uuid primary key default gen_random_uuid(),
   atomic_process_id uuid not null references atomic_processes(id) on delete cascade,
