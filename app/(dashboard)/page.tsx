@@ -228,7 +228,7 @@ export default function OverviewPage() {
 
       {error ? <ErrorState message={error} /> : null}
 
-      <section className="grid gap-3 md:grid-cols-4">
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Business Models Catalogued" value={counts.businessModels} />
         <StatCard label="Strategy Archetypes Researched" value={counts.strategies} />
         <StatCard label="Atomic Processes Identified" value={counts.atomicProcesses} />
