@@ -2,11 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import { getCachedData, getCounts, invalidateDataCache } from "@/lib/data";
-import { supabase } from "@/lib/supabase";
-import type { Counts } from "@/lib/types";
 
 const tabs = [
   { href: "/", label: "Overview" },
@@ -34,48 +31,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [pages, setPages] = useState<AnimatedPage[]>([
     { key: pathname, node: children, phase: "idle", direction: "left" },
   ]);
-  const [counts, setCounts] = useState<Counts>(() => getCachedData<Counts>("counts") ?? {
-    businessModels: 0,
-    strategies: 0,
-    atomicProcesses: 0,
-    shortlisted: 0,
-  });
 
   latestChildrenRef.current = children;
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function refresh() {
-      const nextCounts = await getCounts();
-      if (mounted) setCounts(nextCounts);
-    }
-
-    async function refreshFromDatabase() {
-      invalidateDataCache("counts");
-      await refresh();
-    }
-
-    refresh();
-
-    const client = supabase;
-
-    if (!client) return () => {
-      mounted = false;
-    };
-
-    const channel = client
-      .channel("dashboard-counts")
-      .on("postgres_changes", { event: "*", schema: "public", table: "business_models" }, refreshFromDatabase)
-      .on("postgres_changes", { event: "*", schema: "public", table: "strategies" }, refreshFromDatabase)
-      .on("postgres_changes", { event: "*", schema: "public", table: "atomic_processes" }, refreshFromDatabase)
-      .subscribe();
-
-    return () => {
-      mounted = false;
-      client.removeChannel(channel);
-    };
-  }, []);
 
   useLayoutEffect(() => {
     const previousIndex = tabs.findIndex((tab) => tab.href === previousPathRef.current);
@@ -126,12 +83,6 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               <div className="mt-1 hidden text-xs text-zinc-500 sm:block">
                 PHASE 0 · DISTRIBUTION BIBLE · V1.0 · MAY 2026
               </div>
-            </div>
-            <div className="hidden text-right text-xs leading-6 text-zinc-500 sm:block">
-              <span className="text-black">{counts.businessModels}</span> business models ·{" "}
-              <span className="text-black">{counts.strategies}</span> distribution strategies ·{" "}
-              <span className="text-black">{counts.atomicProcesses}</span> atomic processes ·{" "}
-              <span className="text-black">{counts.shortlisted}</span> Priority 1 shortlisted
             </div>
           </div>
           <nav className="dashboard-mobile-scroll -mx-4 mt-4 flex snap-x snap-mandatory flex-nowrap items-center gap-0 overflow-x-auto border-y border-zinc-200 bg-white px-4 sm:mx-0 sm:mt-5 sm:flex-wrap sm:px-0">

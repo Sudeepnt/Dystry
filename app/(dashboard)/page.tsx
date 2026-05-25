@@ -11,9 +11,6 @@ const sourceBlank = {
   title: "",
   description: "",
 };
-const localSubproblemsStorageKey = "dystry.overview.subproblems";
-const localChannelsStorageKey = "dystry.overview.channels";
-const localSourcesStorageKey = "dystry.overview.sources";
 
 export default function OverviewPage() {
   const [counts, setCounts] = useState<Counts>(() => getCachedData<Counts>("counts") ?? {
@@ -44,9 +41,9 @@ export default function OverviewPage() {
         listSources(),
       ]);
       setCounts(nextCounts);
-      setSubproblems(loadLocalCollection(localSubproblemsStorageKey, nextSubproblems, normalizeSubproblem));
-      setChannels(loadLocalCollection(localChannelsStorageKey, nextChannels, normalizeChannel));
-      setSources(loadLocalCollection(localSourcesStorageKey, nextSources, normalizeSource));
+      setSubproblems(nextSubproblems);
+      setChannels(nextChannels);
+      setSources(nextSources);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load overview data");
     }
@@ -61,18 +58,7 @@ export default function OverviewPage() {
     if (!subproblemName.trim()) return;
 
     if (!supabase) {
-      const nextSubproblems = [
-        ...subproblems,
-        {
-          id: `local-subproblem:${Date.now()}`,
-          name: subproblemName.trim(),
-          created_at: new Date().toISOString(),
-        },
-      ];
-      setSubproblems(nextSubproblems);
-      persistLocalCollection(localSubproblemsStorageKey, nextSubproblems);
-      setSubproblemName("");
-      setSubproblemOpen(false);
+      setError("Supabase is not configured. Sub-problems cannot be saved.");
       return;
     }
 
@@ -89,9 +75,7 @@ export default function OverviewPage() {
 
   async function deleteSubproblem(id: string) {
     if (!supabase) {
-      const nextSubproblems = subproblems.filter((item) => item.id !== id);
-      setSubproblems(nextSubproblems);
-      persistLocalCollection(localSubproblemsStorageKey, nextSubproblems);
+      setError("Supabase is not configured. Sub-problems cannot be deleted.");
       return;
     }
 
@@ -106,18 +90,7 @@ export default function OverviewPage() {
     if (!channelName.trim()) return;
 
     if (!supabase) {
-      const nextChannels = [
-        ...channels,
-        {
-          id: `local-channel:${Date.now()}`,
-          name: channelName.trim(),
-          created_at: new Date().toISOString(),
-        },
-      ];
-      setChannels(nextChannels);
-      persistLocalCollection(localChannelsStorageKey, nextChannels);
-      setChannelName("");
-      setChannelOpen(false);
+      setError("Supabase is not configured. Channels cannot be saved.");
       return;
     }
 
@@ -134,9 +107,7 @@ export default function OverviewPage() {
 
   async function deleteChannel(id: string) {
     if (!supabase) {
-      const nextChannels = channels.filter((item) => item.id !== id);
-      setChannels(nextChannels);
-      persistLocalCollection(localChannelsStorageKey, nextChannels);
+      setError("Supabase is not configured. Channels cannot be deleted.");
       return;
     }
 
@@ -168,22 +139,7 @@ export default function OverviewPage() {
     };
 
     if (!supabase) {
-      const nextSources = editingSource
-        ? sources.map((source) => (source.id === editingSource.id ? { ...source, ...payload } : source))
-        : [
-            ...sources,
-            {
-              id: `local-source:${Date.now()}`,
-              ...payload,
-              created_at: new Date().toISOString(),
-            },
-          ];
-
-      setSources(nextSources);
-      persistLocalCollection(localSourcesStorageKey, nextSources);
-      setSourceOpen(false);
-      setEditingSource(null);
-      setSourceDraft(sourceBlank);
+      setError("Supabase is not configured. Sources cannot be saved.");
       return;
     }
 
@@ -204,9 +160,7 @@ export default function OverviewPage() {
 
   async function deleteSource(id: string) {
     if (!supabase) {
-      const nextSources = sources.filter((source) => source.id !== id);
-      setSources(nextSources);
-      persistLocalCollection(localSourcesStorageKey, nextSources);
+      setError("Supabase is not configured. Sources cannot be deleted.");
       return;
     }
 
@@ -352,55 +306,4 @@ export default function OverviewPage() {
       </section>
     </div>
   );
-}
-
-function loadLocalCollection<T>(key: string, fallback: T[], normalize: (value: unknown) => T): T[] {
-  if (typeof window === "undefined" || supabase) return fallback;
-
-  const saved = window.localStorage.getItem(key);
-  if (!saved) {
-    window.localStorage.setItem(key, JSON.stringify(fallback));
-    return fallback;
-  }
-
-  try {
-    const parsed = JSON.parse(saved);
-    if (Array.isArray(parsed)) return parsed.map(normalize);
-  } catch {
-    window.localStorage.removeItem(key);
-  }
-
-  return fallback;
-}
-
-function persistLocalCollection<T>(key: string, value: T[]) {
-  window.localStorage.setItem(key, JSON.stringify(value));
-}
-
-function normalizeSubproblem(value: unknown): Subproblem {
-  const row = value && typeof value === "object" ? value as Partial<Subproblem> : {};
-  return {
-    id: String(row.id || `local-subproblem:${Date.now()}`),
-    name: String(row.name || ""),
-    created_at: String(row.created_at || new Date().toISOString()),
-  };
-}
-
-function normalizeChannel(value: unknown): DistributionChannel {
-  const row = value && typeof value === "object" ? value as Partial<DistributionChannel> : {};
-  return {
-    id: String(row.id || `local-channel:${Date.now()}`),
-    name: String(row.name || ""),
-    created_at: String(row.created_at || new Date().toISOString()),
-  };
-}
-
-function normalizeSource(value: unknown): ResearchSource {
-  const row = value && typeof value === "object" ? value as Partial<ResearchSource> : {};
-  return {
-    id: String(row.id || `local-source:${Date.now()}`),
-    title: String(row.title || ""),
-    description: String(row.description || ""),
-    created_at: String(row.created_at || new Date().toISOString()),
-  };
 }

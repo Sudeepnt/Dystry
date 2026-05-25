@@ -18,9 +18,6 @@ type AssessmentBoxRow = {
   sort_order: number;
 };
 
-const storageKey = "dystry.assessment.boxes";
-const legacyStorageKey = "dystry.understanding.boxes";
-
 const defaultBoxes: AssessmentBox[] = [
   { id: "understanding-business", heading: "Understanding business", content: "" },
   { id: "business-model", heading: "Business model", content: "" },
@@ -48,35 +45,22 @@ export default function AssessmentPage() {
   }, []);
 
   async function loadBoxes() {
-    const legacySaved = window.localStorage.getItem(legacyStorageKey);
-    if (legacySaved && !window.localStorage.getItem(storageKey)) {
-      window.localStorage.setItem(storageKey, legacySaved);
-      window.localStorage.removeItem(legacyStorageKey);
-    }
-
-    const localBoxes = readLocalBoxes();
-
-    if (cachedAssessmentBoxes && !localBoxes.length) {
+    if (cachedAssessmentBoxes) {
       latestBoxesRef.current = cachedAssessmentBoxes;
       setBoxes(cachedAssessmentBoxes);
       return;
     }
 
     if (!supabase) {
-      if (localBoxes.length) setBoxes(localBoxes);
+      setError("Supabase is not configured. Assessment boxes cannot be loaded.");
       return;
     }
 
     try {
       setError("");
-      let nextBoxes = await loadAssessmentBoxesFromSupabase();
+      const nextBoxes = await loadAssessmentBoxesFromSupabase();
 
-      if (localBoxes.length) {
-        nextBoxes = mergeBoxes(nextBoxes, localBoxes);
-        await saveBoxesToSupabase(nextBoxes);
-        window.localStorage.removeItem(storageKey);
-        window.localStorage.removeItem(legacyStorageKey);
-      } else if (nextBoxes === defaultBoxes) {
+      if (nextBoxes === defaultBoxes) {
         await saveBoxesToSupabase(nextBoxes);
       }
 
@@ -85,10 +69,6 @@ export default function AssessmentPage() {
       setBoxes(nextBoxes);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load assessment boxes");
-      if (localBoxes.length) {
-        latestBoxesRef.current = localBoxes;
-        setBoxes(localBoxes);
-      }
     }
   }
 
@@ -97,7 +77,7 @@ export default function AssessmentPage() {
     cachedAssessmentBoxes = nextBoxes;
     setBoxes(nextBoxes);
     if (!supabase) {
-      window.localStorage.setItem(storageKey, JSON.stringify(nextBoxes));
+      setError("Supabase is not configured. Assessment boxes cannot be saved.");
       return;
     }
 
@@ -220,49 +200,6 @@ async function loadAssessmentBoxesFromSupabase(): Promise<AssessmentBox[]> {
 
   assessmentBoxesPromise = promise;
   return promise;
-}
-
-function readLocalBoxes() {
-  const saved = window.localStorage.getItem(storageKey);
-  if (!saved) return [];
-
-  try {
-    const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? normalizeBoxes(parsed) : [];
-  } catch {
-    window.localStorage.removeItem(storageKey);
-    return [];
-  }
-}
-
-function normalizeBoxes(value: Partial<AssessmentBox>[]) {
-  const savedBoxes = value
-    .map((box) => ({
-      id: String(box.id || createBoxId()),
-      heading: String(box.heading ?? ""),
-      content: String(box.content ?? ""),
-    }))
-    .filter((box) => box.heading.trim() || box.content.trim());
-
-  const savedIds = new Set(savedBoxes.map((box) => box.id));
-  const missingDefaults = defaultBoxes.filter((box) => !savedIds.has(box.id));
-
-  return [...missingDefaults, ...savedBoxes];
-}
-
-function mergeBoxes(remoteBoxes: AssessmentBox[], localBoxes: AssessmentBox[]) {
-  const merged = [...remoteBoxes];
-
-  for (const localBox of localBoxes) {
-    const existingIndex = merged.findIndex((box) => box.id === localBox.id);
-    if (existingIndex >= 0) {
-      merged[existingIndex] = localBox;
-    } else {
-      merged.push(localBox);
-    }
-  }
-
-  return merged;
 }
 
 function boxFromRow(row: AssessmentBoxRow): AssessmentBox {

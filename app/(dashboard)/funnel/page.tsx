@@ -14,7 +14,6 @@ type FunnelStage = {
   icon: React.ReactNode;
 };
 
-const storageKey = "dystry.funnel.notes";
 const blankNotes: Record<FunnelStage["id"], string> = {
   "lead-generation": "",
   "lead-nurturing": "",
@@ -66,15 +65,7 @@ export default function FunnelPage() {
 
   async function loadNotes() {
     if (!supabase) {
-      const saved = window.localStorage.getItem(storageKey);
-      if (!saved) return;
-
-      try {
-        const parsed = JSON.parse(saved) as Partial<Record<FunnelStage["id"], string>>;
-        setNotes((current) => ({ ...current, ...parsed }));
-      } catch {
-        window.localStorage.removeItem(storageKey);
-      }
+      setError("Supabase is not configured. Funnel notes cannot be loaded.");
       return;
     }
 
@@ -82,21 +73,6 @@ export default function FunnelPage() {
       setError("");
       const rows = await listFunnelNotes();
       const nextNotes = notesFromRows(rows);
-
-      const saved = window.localStorage.getItem(storageKey);
-      if (saved && !rows.length) {
-        try {
-          const parsed = JSON.parse(saved) as Partial<Record<FunnelStage["id"], string>>;
-          const localNotes = { ...nextNotes, ...parsed };
-          setNotes(localNotes);
-          await Promise.all(stages.map((stage) => saveStageToSupabase(stage.id, localNotes[stage.id] || "")));
-          window.localStorage.removeItem(storageKey);
-          return;
-        } catch {
-          window.localStorage.removeItem(storageKey);
-        }
-      }
-
       setNotes(nextNotes);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load funnel notes");
@@ -106,14 +82,13 @@ export default function FunnelPage() {
   function updateStage(stageId: FunnelStage["id"], value: string) {
     const nextNotes = { ...notes, [stageId]: value };
     setNotes(nextNotes);
-
-    if (!supabase) {
-      window.localStorage.setItem(storageKey, JSON.stringify(nextNotes));
-    }
   }
 
   async function saveStage(stageId: FunnelStage["id"], value: string) {
-    if (!supabase) return;
+    if (!supabase) {
+      setError("Supabase is not configured. Funnel notes cannot be saved.");
+      return;
+    }
 
     try {
       setError("");

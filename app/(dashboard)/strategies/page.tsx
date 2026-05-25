@@ -24,10 +24,6 @@ type MatrixRow = {
 const defaultTableHeadings = ["Business model", "Strategies", "Process", "Channels", "Output", "Stage", "Rate"];
 const ratingOptions = Array.from({ length: 11 }, (_, index) => index);
 const stageOptions = ["lead gen", "lead nurturing", "deal close"];
-const headingStorageKey = "dystry.strategy.tableHeadings";
-const customRowsStorageKey = "dystry.strategy.customRows";
-const rowRatingsStorageKey = "dystry.strategy.rowRatings";
-const hiddenRowsStorageKey = "dystry.strategy.hiddenRows";
 const rowFields: Array<keyof Pick<MatrixRow, "businessModel" | "strategy" | "process" | "channels" | "output" | "stage" | "rate">> = [
   "businessModel",
   "strategy",
@@ -43,9 +39,6 @@ export default function StrategiesPage() {
   const [processes, setProcesses] = useState<AtomicProcess[]>(() => getCachedData<AtomicProcess[]>("atomicProcesses") ?? []);
   const [models, setModels] = useState<BusinessModel[]>(() => getCachedData<BusinessModel[]>("businessModels") ?? []);
   const [tableHeadings, setTableHeadings] = useState(defaultTableHeadings);
-  const [customRows, setCustomRows] = useState<MatrixRow[]>([]);
-  const [rowRatings, setRowRatings] = useState<Record<string, string>>({});
-  const [hiddenRows, setHiddenRows] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [error, setError] = useState("");
@@ -68,60 +61,6 @@ export default function StrategiesPage() {
 
   useEffect(() => {
     refresh();
-
-    const savedHeadings = window.localStorage.getItem(headingStorageKey);
-    if (savedHeadings) {
-      try {
-        const parsed = JSON.parse(savedHeadings);
-        if (Array.isArray(parsed) && parsed.length === defaultTableHeadings.length) {
-          setTableHeadings(parsed.map((heading) => String(heading)));
-        } else {
-          window.localStorage.removeItem(headingStorageKey);
-        }
-      } catch {
-        window.localStorage.removeItem(headingStorageKey);
-      }
-    }
-
-    const savedCustomRows = window.localStorage.getItem(customRowsStorageKey);
-    if (savedCustomRows) {
-      try {
-        const parsed = JSON.parse(savedCustomRows);
-        if (Array.isArray(parsed)) {
-          const parsedRows = parsed.map(normalizeCustomRow).filter(rowHasContent);
-          setCustomRows(parsedRows);
-          window.localStorage.setItem(customRowsStorageKey, JSON.stringify(parsedRows));
-        }
-      } catch {
-        window.localStorage.removeItem(customRowsStorageKey);
-      }
-    }
-
-    const savedRatings = window.localStorage.getItem(rowRatingsStorageKey);
-    if (savedRatings) {
-      try {
-        const parsed = JSON.parse(savedRatings);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          setRowRatings(
-            Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, normalizeRate(String(value))])),
-          );
-        }
-      } catch {
-        window.localStorage.removeItem(rowRatingsStorageKey);
-      }
-    }
-
-    const savedHiddenRows = window.localStorage.getItem(hiddenRowsStorageKey);
-    if (savedHiddenRows) {
-      try {
-        const parsed = JSON.parse(savedHiddenRows);
-        if (Array.isArray(parsed)) {
-          setHiddenRows(parsed.map((rowId) => String(rowId)));
-        }
-      } catch {
-        window.localStorage.removeItem(hiddenRowsStorageKey);
-      }
-    }
   }, []);
 
   const filtered = useMemo(() => {
@@ -163,78 +102,56 @@ export default function StrategiesPage() {
         businessModelIds: linkedModelIds,
         businessModel: linkedModelTitles.length ? linkedModelTitles.join(", ") : "All / TBD",
         strategy: strategy.title,
-        process: relatedProcesses.length ? relatedProcesses.join(", ") : "Unmapped",
+        process: strategy.key_variables || (relatedProcesses.length ? relatedProcesses.join(", ") : "Unmapped"),
         channels: strategy.channel_mechanism || strategy.strategy_category || "Not documented",
         output: strategy.primary_metric || strategy.landmark_example || "Not documented",
         stage: normalizeStage(strategy.stage),
-        rate: rowRatings[id] ?? rateFromEvidence(strategy.evidence_quality),
+        rate: rateFromEvidence(strategy.evidence_quality),
       };
     });
 
-    const visibleCustomRows = customRows.filter((row) => {
-      const query = search.trim().toLowerCase();
-      const matchesSearch =
-        !query ||
-        [row.businessModel, row.strategy, row.process, row.channels, row.output, row.stage, row.rate].join(" ").toLowerCase().includes(query);
-      const matchesFilter =
-        filter === "all" ||
-        row.businessModelIds?.includes(filter) ||
-        row.businessModel === models.find((model) => model.id === filter)?.title;
-      return matchesSearch && matchesFilter;
-    });
-
-    return [...sourceRows, ...visibleCustomRows]
-      .filter((row) => !hiddenRows.includes(row.id))
-      .sort((left, right) => {
-        if (left.custom && right.custom) return customRowTimestamp(right.id) - customRowTimestamp(left.id);
-        if (left.custom !== right.custom) return left.custom ? -1 : 1;
-
+    return sourceRows.sort((left, right) => {
         const ratingDifference = Number(right.rate || 0) - Number(left.rate || 0);
         if (ratingDifference) return ratingDifference;
         return 0;
       });
-  }, [customRows, filtered, filter, hiddenRows, models, processes, rowRatings, search]);
+  }, [filtered, processes]);
 
   function updateTableHeading(index: number, value: string) {
     const nextHeadings = tableHeadings.map((heading, headingIndex) => (headingIndex === index ? value : heading));
     setTableHeadings(nextHeadings);
-    window.localStorage.setItem(headingStorageKey, JSON.stringify(nextHeadings));
   }
 
-  function addCustomRow() {
-    const nextRows = [
-      {
-        id: `custom:${Date.now()}`,
-        businessModelIds: [],
-        businessModel: "",
-        strategy: "",
-        process: "",
-        channels: "",
-        output: "",
+  async function addCustomRow() {
+    if (!supabase) {
+      setError("Supabase is not configured. Strategies cannot be created.");
+      return;
+    }
+
+    const createdAt = new Date().toISOString();
+    const title = `Untitled strategy ${createdAt}`;
+    const { data, error: insertError } = await supabase
+      .from("strategies")
+      .insert({
+        title,
         stage: "",
-        rate: "",
-        custom: true,
-      },
-      ...customRows,
-    ];
-    setCustomRows(nextRows);
-  }
+        primary_metric: "",
+        channel_mechanism: "",
+        key_variables: "",
+        evidence_quality: "",
+      })
+      .select("*, strategy_business_models(*, business_models(id, title))")
+      .single();
 
-  function updateCustomRow(rowId: string, field: keyof MatrixRow, value: string) {
-    const nextRows = customRows.map((row) => (row.id === rowId ? { ...row, [field]: field === "rate" ? normalizeRate(value) : value } : row));
-    setCustomRows(nextRows);
-    persistCustomRows(nextRows);
-  }
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
 
-  function updateCustomRowModels(rowId: string, modelIds: string[]) {
-    const modelTitles = models
-      .filter((model) => modelIds.includes(model.id))
-      .map((model) => model.title);
-    const nextRows = customRows.map((row) =>
-      row.id === rowId ? { ...row, businessModelIds: modelIds, businessModel: modelTitles.join(", ") } : row,
-    );
-    setCustomRows(nextRows);
-    persistCustomRows(nextRows);
+    if (data) {
+      invalidateDataCache("strategies", "counts");
+      setStrategies((current) => [data, ...current]);
+    }
   }
 
   async function updateSourceRowModels(row: MatrixRow, modelIds: string[]) {
@@ -285,10 +202,26 @@ export default function StrategiesPage() {
     refresh();
   }
 
-  function updateSourceRate(rowId: string, value: string) {
-    const nextRatings = { ...rowRatings, [rowId]: normalizeRate(value) };
-    setRowRatings(nextRatings);
-    window.localStorage.setItem(rowRatingsStorageKey, JSON.stringify(nextRatings));
+  async function updateSourceRate(row: MatrixRow, value: string) {
+    const nextRate = normalizeRate(value);
+    if (!row.strategyId || !supabase) return;
+
+    setStrategies((currentStrategies) =>
+      currentStrategies.map((strategy) =>
+        strategy.id === row.strategyId ? { ...strategy, evidence_quality: nextRate ? `Rate: ${nextRate}` : "" } : strategy,
+      ),
+    );
+
+    const { error: updateError } = await supabase
+      .from("strategies")
+      .update({ evidence_quality: nextRate ? `Rate: ${nextRate}` : "" })
+      .eq("id", row.strategyId);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+
+    invalidateDataCache("strategies");
   }
 
   async function updateSourceStage(row: MatrixRow, value: string) {
@@ -308,17 +241,54 @@ export default function StrategiesPage() {
     invalidateDataCache("strategies");
   }
 
-  function deleteRow(row: MatrixRow) {
-    if (row.custom) {
-      const nextRows = customRows.filter((customRow) => customRow.id !== row.id);
-      setCustomRows(nextRows);
-      persistCustomRows(nextRows);
+  function updateSourceFieldLocal(row: MatrixRow, field: keyof Pick<MatrixRow, "strategy" | "process" | "channels" | "output">, value: string) {
+    if (!row.strategyId) return;
+    const strategyField = strategyFieldFromRowField(field);
+    setStrategies((currentStrategies) =>
+      currentStrategies.map((strategy) =>
+        strategy.id === row.strategyId ? { ...strategy, [strategyField]: value } : strategy,
+      ),
+    );
+  }
+
+  async function saveSourceField(row: MatrixRow, field: keyof Pick<MatrixRow, "strategy" | "process" | "channels" | "output">, value: string) {
+    if (!row.strategyId || !supabase) return;
+
+    const strategyField = strategyFieldFromRowField(field);
+    const nextValue = field === "strategy" ? value.trim() : value;
+    if (field === "strategy" && !nextValue) {
+      setError("Strategy title cannot be empty");
+      refresh();
       return;
     }
 
-    const nextHiddenRows = hiddenRows.includes(row.id) ? hiddenRows : [...hiddenRows, row.id];
-    setHiddenRows(nextHiddenRows);
-    window.localStorage.setItem(hiddenRowsStorageKey, JSON.stringify(nextHiddenRows));
+    const { error: updateError } = await supabase
+      .from("strategies")
+      .update({ [strategyField]: nextValue })
+      .eq("id", row.strategyId);
+    if (updateError) {
+      setError(updateError.message);
+      refresh();
+      return;
+    }
+
+    invalidateDataCache("strategies", "counts");
+  }
+
+  async function deleteRow(row: MatrixRow) {
+    if (!row.strategyId || !supabase) return;
+
+    const previousStrategies = strategies;
+    setStrategies((currentStrategies) => currentStrategies.filter((strategy) => strategy.id !== row.strategyId));
+
+    const { error: deleteError } = await supabase.from("strategies").delete().eq("id", row.strategyId);
+    if (deleteError) {
+      setStrategies(previousStrategies);
+      setError(deleteError.message);
+      return;
+    }
+
+    invalidateDataCache("strategies", "atomicProcesses", "counts");
   }
 
   return (
@@ -345,7 +315,7 @@ export default function StrategiesPage() {
       <section>
         <SectionHeader
           label="Matrix"
-          title="Strategy Operating Table"
+          title={`Strategy Operating Table (${tableRows.length})`}
           action={
             <Button onClick={addCustomRow}>
               <Plus size={14} />
@@ -356,6 +326,7 @@ export default function StrategiesPage() {
         <div className="dashboard-mobile-scroll relative left-1/2 w-screen -translate-x-1/2 overflow-x-auto border-y border-zinc-200 bg-white sm:left-auto sm:w-auto sm:translate-x-0 sm:border">
           <table className="min-w-[1100px] w-full table-fixed border-collapse text-left text-sm">
             <colgroup>
+              <col className="w-[56px]" />
               <col className="w-[240px]" />
               <col className="w-[220px]" />
               <col />
@@ -367,6 +338,7 @@ export default function StrategiesPage() {
             </colgroup>
             <thead>
               <tr className="border-b border-zinc-200">
+                <th className="border-r border-zinc-200 px-3 py-3 text-xs font-medium text-black">#</th>
                 {tableHeadings.map((heading, index) => (
                   <th key={index} className="border-r border-zinc-200 p-0 last:border-r-0">
                     <input
@@ -383,6 +355,7 @@ export default function StrategiesPage() {
             <tbody>
               {tableRows.map((row, index) => (
                 <tr key={`${row.id}-${index}`} className="group border-b border-zinc-100 last:border-b-0">
+                  <td className="border-r border-zinc-100 px-3 py-3 align-top text-xs text-zinc-500">{index + 1}</td>
                   {rowFields.map((field) => (
                     <td key={field} className="border-r border-zinc-100 p-0 align-top last:border-r-0">
                       {field === "businessModel" ? (
@@ -390,20 +363,14 @@ export default function StrategiesPage() {
                           label="Select business models"
                           options={models.map((model) => ({ id: model.id, label: model.title }))}
                           selected={row.businessModelIds ?? idsFromTitles(row.businessModel, models)}
-                          onChange={(modelIds) =>
-                            row.custom ? updateCustomRowModels(row.id, modelIds) : updateSourceRowModels(row, modelIds)
-                          }
+                          onChange={(modelIds) => updateSourceRowModels(row, modelIds)}
                         />
 	                      ) : field === "stage" ? (
 	                        <Select
 	                          aria-label={`Stage ${row.strategy || "strategy row"}`}
 	                          className="h-9 w-full border-0 bg-transparent px-3 text-sm focus:border-0 focus:ring-0"
 	                          value={row.stage}
-	                          onChange={(event) =>
-	                            row.custom
-	                              ? updateCustomRow(row.id, field, event.target.value)
-	                              : updateSourceStage(row, event.target.value)
-	                          }
+	                          onChange={(event) => updateSourceStage(row, event.target.value)}
 	                        >
 	                          <option value="">Select stage</option>
 	                          {stageOptions.map((option) => (
@@ -412,35 +379,12 @@ export default function StrategiesPage() {
 	                            </option>
 	                          ))}
 	                        </Select>
-	                      ) : row.custom && field === "rate" ? (
-	                        <Select
-	                          aria-label={tableHeadings[rowFields.indexOf(field)]}
-	                          className="h-9 w-14 border-0 bg-transparent px-0 text-center focus:border-0 focus:ring-0"
-	                          value={row.rate || "0"}
-	                          onChange={(event) => updateCustomRow(row.id, field, event.target.value)}
-	                        >
-	                          {ratingOptions.map((option) => (
-	                            <option key={option} value={option}>
-	                              {option}
-	                            </option>
-	                          ))}
-	                        </Select>
-	                      ) : row.custom ? (
-	                        <textarea
-	                          aria-label={tableHeadings[rowFields.indexOf(field)]}
-	                          className={`block min-h-20 w-full resize-none overflow-hidden bg-white px-3 py-2 text-sm leading-5 text-zinc-800 outline-none transition focus:bg-zinc-50 ${field === "channels" ? "text-center" : ""}`}
-	                          ref={resizeTextarea}
-                          rows={2}
-                          value={row[field]}
-                          onInput={(event) => resizeTextarea(event.currentTarget)}
-                          onChange={(event) => updateCustomRow(row.id, field, event.target.value)}
-                        />
 	                      ) : field === "rate" ? (
 	                        <Select
 	                          aria-label={`Rate ${row.strategy}`}
 	                          className="h-9 w-14 border-0 bg-transparent px-0 text-center focus:border-0 focus:ring-0"
 	                          value={row.rate || "0"}
-	                          onChange={(event) => updateSourceRate(row.id, event.target.value)}
+	                          onChange={(event) => updateSourceRate(row, event.target.value)}
 	                        >
 	                          {ratingOptions.map((option) => (
 	                            <option key={option} value={option}>
@@ -449,7 +393,16 @@ export default function StrategiesPage() {
 	                          ))}
 	                        </Select>
 	                      ) : (
-	                        <div className={`whitespace-pre-wrap p-3 leading-5 text-zinc-700 ${field === "channels" ? "text-center" : ""}`}>{row[field]}</div>
+	                        <textarea
+	                          aria-label={tableHeadings[rowFields.indexOf(field)]}
+	                          className={`block min-h-20 w-full resize-none overflow-hidden bg-white px-3 py-2 text-sm leading-5 text-zinc-800 outline-none transition focus:bg-zinc-50 ${field === "channels" ? "text-center" : ""}`}
+	                          ref={resizeTextarea}
+                          rows={2}
+                          value={row[field]}
+                          onInput={(event) => resizeTextarea(event.currentTarget)}
+                          onChange={(event) => updateSourceFieldLocal(row, field, event.target.value)}
+                          onBlur={(event) => saveSourceField(row, field, event.target.value)}
+                        />
 	                      )}
                     </td>
                   ))}
@@ -489,44 +442,21 @@ function rateFromEvidence(value: string | null) {
   return match ? normalizeRate(match[1]) : "";
 }
 
-function customRowTimestamp(rowId: string) {
-  const timestamp = Number(rowId.replace("custom:", ""));
-  return Number.isFinite(timestamp) ? timestamp : 0;
-}
+function strategyFieldFromRowField(field: keyof Pick<MatrixRow, "strategy" | "process" | "channels" | "output">) {
+  const fieldMap = {
+    strategy: "title",
+    process: "key_variables",
+    channels: "channel_mechanism",
+    output: "primary_metric",
+  } as const;
 
-function persistCustomRows(rows: MatrixRow[]) {
-  const rowsWithContent = rows.filter(rowHasContent);
-  if (rowsWithContent.length) {
-    window.localStorage.setItem(customRowsStorageKey, JSON.stringify(rowsWithContent));
-  } else {
-    window.localStorage.removeItem(customRowsStorageKey);
-  }
-}
-
-function rowHasContent(row: MatrixRow) {
-  return rowFields.some((field) => row[field].trim());
+  return fieldMap[field];
 }
 
 function resizeTextarea(element: HTMLTextAreaElement | null) {
   if (!element) return;
   element.style.height = "auto";
   element.style.height = `${element.scrollHeight}px`;
-}
-
-function normalizeCustomRow(row: Partial<MatrixRow>): MatrixRow {
-  const businessModel = String(row.businessModel ?? "");
-  return {
-    id: row.id || `custom:${Date.now()}`,
-    businessModelIds: Array.isArray(row.businessModelIds) ? row.businessModelIds.map(String) : [],
-    businessModel,
-    strategy: String(row.strategy ?? ""),
-    process: String(row.process ?? ""),
-    channels: String(row.channels ?? ""),
-    output: String(row.output ?? ""),
-    stage: normalizeStage(row.stage),
-    rate: normalizeRate(String(row.rate ?? "")),
-    custom: true,
-  };
 }
 
 function idsFromTitles(value: string, models: BusinessModel[]) {

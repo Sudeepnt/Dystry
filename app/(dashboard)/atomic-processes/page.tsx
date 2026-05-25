@@ -37,9 +37,6 @@ const ratingFields: Array<keyof AtomicRatings> = [
 ];
 const ratingOptions = Array.from({ length: 11 }, (_, index) => index);
 const stageOptions = ["lead gen", "lead nurturing", "deal close"];
-const atomicRatingStorageKey = "dystry.atomic.tableRatings";
-const atomicCustomRowsStorageKey = "dystry.atomic.customRows";
-const atomicStageStorageKey = "dystry.atomic.tableStages";
 
 export default function AtomicProcessesPage() {
   const [processes, setProcesses] = useState<AtomicProcess[]>(() => getCachedData<AtomicProcess[]>("atomicProcesses") ?? []);
@@ -67,48 +64,6 @@ export default function AtomicProcessesPage() {
   }
 
   useEffect(() => {
-    const savedRatings = window.localStorage.getItem(atomicRatingStorageKey);
-    if (savedRatings) {
-      try {
-        const parsed = JSON.parse(savedRatings);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          setRatingOverrides(Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, normalizeRatings(value)])));
-        }
-      } catch {
-        window.localStorage.removeItem(atomicRatingStorageKey);
-      }
-    }
-
-    const savedCustomRows = window.localStorage.getItem(atomicCustomRowsStorageKey);
-    if (savedCustomRows) {
-      try {
-        const parsed = JSON.parse(savedCustomRows);
-        if (Array.isArray(parsed)) {
-          const parsedRows = parsed.map(normalizeCustomRow).filter(rowHasContent);
-          if (!supabase) {
-            setCustomRows(parsedRows);
-            window.localStorage.setItem(atomicCustomRowsStorageKey, JSON.stringify(parsedRows));
-          } else {
-            window.localStorage.removeItem(atomicCustomRowsStorageKey);
-          }
-        }
-      } catch {
-        window.localStorage.removeItem(atomicCustomRowsStorageKey);
-      }
-    }
-
-    const savedStages = window.localStorage.getItem(atomicStageStorageKey);
-    if (savedStages) {
-      try {
-        const parsed = JSON.parse(savedStages);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          setStageOverrides(Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, normalizeStage(String(value))])));
-        }
-      } catch {
-        window.localStorage.removeItem(atomicStageStorageKey);
-      }
-    }
-
     refresh();
   }, []);
 
@@ -125,7 +80,7 @@ export default function AtomicProcessesPage() {
         processId: process.id,
         linkedModelIds,
         businessModel: modelTitles.length ? modelTitles.join(", ") : "All / TBD",
-        productBrief: process.product_brief || process.title,
+        productBrief: process.product_brief ?? "",
         input: process.input_text ?? "",
         action: process.action_text ?? "",
         output: process.output_text ?? "",
@@ -155,8 +110,7 @@ export default function AtomicProcessesPage() {
 
   async function addCustomRow() {
     if (supabase) {
-      const createdAt = new Date().toISOString();
-      const title = `Untitled atomic process ${createdAt}`;
+      const title = createInternalProcessTitle();
       const { data, error: insertError } = await supabase
         .from("atomic_processes")
         .insert({
@@ -187,22 +141,7 @@ export default function AtomicProcessesPage() {
       return;
     }
 
-    setCustomRows((currentRows) => [
-      {
-        id: `custom:${Date.now()}`,
-        linkedModelIds: [],
-        businessModel: "",
-        productBrief: "",
-        input: "",
-        action: "",
-        output: "",
-        stage: "",
-        ratings: normalizeRatings({}),
-        shortlisted: false,
-        custom: true,
-      },
-      ...currentRows,
-    ]);
+    setError("Supabase is not configured. Atomic processes cannot be created.");
   }
 
   async function updateSourceRating(processId: string, field: keyof AtomicRatings, value: string) {
@@ -217,9 +156,11 @@ export default function AtomicProcessesPage() {
       },
     };
     setRatingOverrides(nextRatings);
-    window.localStorage.setItem(atomicRatingStorageKey, JSON.stringify(nextRatings));
 
-    if (!supabase) return;
+    if (!supabase) {
+      setError("Supabase is not configured. Atomic ratings cannot be saved.");
+      return;
+    }
 
     setProcesses((currentProcesses) =>
       currentProcesses.map((process) => (process.id === processId ? { ...process, [field]: numericValue } : process)),
@@ -236,7 +177,6 @@ export default function AtomicProcessesPage() {
   function updateCustomRow(rowId: string, update: (row: AtomicTableRow) => AtomicTableRow) {
     const nextRows = customRows.map((row) => (row.id === rowId ? update(row) : row));
     setCustomRows(nextRows);
-    persistCustomRows(nextRows);
   }
 
   function updateCustomRowModels(rowId: string, modelIds: string[]) {
@@ -254,9 +194,11 @@ export default function AtomicProcessesPage() {
     const nextStage = normalizeStage(value);
     const nextStages = { ...stageOverrides, [processId]: nextStage };
     setStageOverrides(nextStages);
-    window.localStorage.setItem(atomicStageStorageKey, JSON.stringify(nextStages));
 
-    if (!supabase) return;
+    if (!supabase) {
+      setError("Supabase is not configured. Atomic stages cannot be saved.");
+      return;
+    }
 
     setProcesses((currentProcesses) =>
       currentProcesses.map((process) => (process.id === processId ? { ...process, stage: nextStage } : process)),
@@ -291,7 +233,7 @@ export default function AtomicProcessesPage() {
 
     const payload =
       field === "productBrief"
-        ? { product_brief: value }
+        ? { product_brief: value, ...(value.trim() ? { title: value.trim() } : {}) }
         : field === "input"
           ? { input_text: value }
           : field === "action"
@@ -355,7 +297,6 @@ export default function AtomicProcessesPage() {
   function deleteCustomRow(rowId: string) {
     const nextRows = customRows.filter((row) => row.id !== rowId);
     setCustomRows(nextRows);
-    persistCustomRows(nextRows);
   }
 
   async function deleteSourceRow(row: AtomicTableRow) {
@@ -377,7 +318,7 @@ export default function AtomicProcessesPage() {
     const shortlisted = !row.shortlisted;
 
     if (row.custom) {
-      updateCustomRow(row.id, (current) => ({ ...current, shortlisted }));
+      setError("Supabase is not configured for this row. Shortlist changes must be saved to Supabase.");
       return;
     }
 
@@ -419,7 +360,7 @@ export default function AtomicProcessesPage() {
       <section>
         <SectionHeader
           label="Processes"
-          title={`${processes.length + customRows.filter(rowHasContent).length} Atomic Process Records`}
+          title={`Atomic Process Records (${tableRows.length})`}
           action={
             <Button onClick={addCustomRow}>
               <Plus size={14} />
@@ -430,6 +371,7 @@ export default function AtomicProcessesPage() {
         <div className="dashboard-mobile-scroll relative left-1/2 w-screen -translate-x-1/2 overflow-x-auto border-y border-zinc-200 bg-white sm:left-auto sm:w-auto sm:translate-x-0 sm:border">
           <table className="min-w-[1428px] w-full table-fixed border-collapse text-left text-sm">
             <colgroup>
+              <col className="w-[56px]" />
               <col className="w-[220px]" />
               <col className="w-[260px]" />
               <col className="w-[132px]" />
@@ -445,6 +387,7 @@ export default function AtomicProcessesPage() {
             <thead>
               <tr className="border-b border-zinc-200">
                 {[
+                  "#",
                   "Business model",
                   "Product brief",
                   "Stage",
@@ -464,8 +407,9 @@ export default function AtomicProcessesPage() {
               </tr>
             </thead>
             <tbody>
-              {tableRows.map((row) => (
+              {tableRows.map((row, index) => (
                 <tr key={row.id} className="group border-b border-zinc-100 last:border-b-0">
+                  <td className="border-r border-zinc-100 px-3 py-3 align-top text-xs text-zinc-500">{index + 1}</td>
                   <td className="border-r border-zinc-100 p-0 align-top">
                     {row.custom ? (
                       <MultiSelect
@@ -653,50 +597,11 @@ function normalizeRatings(value: unknown): AtomicRatings {
   };
 }
 
-function normalizeCustomRow(row: Partial<AtomicTableRow>): AtomicTableRow {
-  const businessModel = String(row.businessModel ?? "");
-  return {
-    id: row.id || `custom:${Date.now()}`,
-    linkedModelIds: Array.isArray(row.linkedModelIds) ? row.linkedModelIds.map(String) : [],
-    businessModel,
-    productBrief: String(row.productBrief ?? ""),
-    input: String(row.input ?? ""),
-    action: String(row.action ?? ""),
-    output: String(row.output ?? ""),
-    stage: normalizeStage(row.stage),
-    ratings: normalizeRatings(row.ratings),
-    shortlisted: Boolean(row.shortlisted),
-    custom: true,
-  };
-}
-
 function idsFromTitles(value: string, models: BusinessModel[]) {
   const selectedTitles = value.split(",").map((title) => title.trim()).filter(Boolean);
   return models
     .filter((model) => selectedTitles.includes(model.title))
     .map((model) => model.id);
-}
-
-function persistCustomRows(rows: AtomicTableRow[]) {
-  const rowsWithContent = rows.filter(rowHasContent);
-  if (rowsWithContent.length) {
-    window.localStorage.setItem(atomicCustomRowsStorageKey, JSON.stringify(rowsWithContent));
-  } else {
-    window.localStorage.removeItem(atomicCustomRowsStorageKey);
-  }
-}
-
-function rowHasContent(row: AtomicTableRow) {
-  return Boolean(
-    row.businessModel.trim() ||
-      row.productBrief.trim() ||
-      row.input.trim() ||
-      row.action.trim() ||
-      row.output.trim() ||
-      row.stage.trim() ||
-      row.shortlisted ||
-      totalRating(row.ratings),
-  );
 }
 
 function normalizeStage(value: string | null | undefined) {
@@ -723,4 +628,9 @@ function clampRating(value: unknown) {
 
 function totalRating(ratings: AtomicRatings) {
   return ratingFields.reduce((total, field) => total + ratings[field], 0);
+}
+
+function createInternalProcessTitle() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return `atomic-process:${crypto.randomUUID()}`;
+  return `atomic-process:${Date.now()}`;
 }
