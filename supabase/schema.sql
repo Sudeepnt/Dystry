@@ -108,7 +108,17 @@ on atomic_processes (
   software_replaceability,
   willingness_to_pay,
   composability
-);
+)
+where
+  nullif(btrim(coalesce(product_brief, '')), '') is not null
+  or nullif(btrim(coalesce(input_text, '')), '') is not null
+  or nullif(btrim(coalesce(action_text, '')), '') is not null
+  or nullif(btrim(coalesce(output_text, '')), '') is not null
+  or nullif(btrim(coalesce(stage, '')), '') is not null
+  or pain_frequency <> 0
+  or software_replaceability <> 0
+  or willingness_to_pay <> 0
+  or composability <> 0;
 
 create table if not exists atomic_process_business_models (
   id uuid primary key default gen_random_uuid(),

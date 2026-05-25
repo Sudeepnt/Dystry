@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Search, Trash2 } from "lucide-react";
 import { getCachedData, invalidateDataCache, listAtomicProcesses, listBusinessModels, listStrategies } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
@@ -19,11 +19,24 @@ type MatrixRow = {
   stage: string;
   rate: string;
   custom?: boolean;
+  draft?: boolean;
 };
 
 const defaultTableHeadings = ["Business model", "Strategies", "Process", "Channels", "Output", "Stage", "Rate"];
 const ratingOptions = Array.from({ length: 11 }, (_, index) => index);
-const stageOptions = ["lead gen", "lead nurturing", "deal close"];
+const stageOptions = [
+  "awareness",
+  "acquisition",
+  "adoption",
+  "distribution",
+  "viral growth",
+  "network growth",
+  "sales",
+  "brand positioning",
+  "lead gen",
+  "lead nurturing",
+  "deal close",
+];
 const rowFields: Array<keyof Pick<MatrixRow, "businessModel" | "strategy" | "process" | "channels" | "output" | "stage" | "rate">> = [
   "businessModel",
   "strategy",
@@ -42,6 +55,7 @@ export default function StrategiesPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [error, setError] = useState("");
+  const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   async function refresh() {
     try {
@@ -95,22 +109,25 @@ export default function StrategiesPage() {
         .filter((process) => process.related_strategy_id === strategy.id)
         .map((process) => process.title);
       const id = `source:${strategy.id}`;
+      const draft = isInternalStrategyTitle(strategy.title);
 
       return {
         id,
         strategyId: strategy.id,
         businessModelIds: linkedModelIds,
         businessModel: linkedModelTitles.length ? linkedModelTitles.join(", ") : "All / TBD",
-        strategy: strategy.title,
+        strategy: strategy.landmark_example || (draft ? "" : strategy.title),
         process: strategy.key_variables || (relatedProcesses.length ? relatedProcesses.join(", ") : "Unmapped"),
         channels: strategy.channel_mechanism || strategy.strategy_category || "Not documented",
         output: strategy.primary_metric || strategy.landmark_example || "Not documented",
         stage: normalizeStage(strategy.stage),
         rate: rateFromEvidence(strategy.evidence_quality),
+        draft,
       };
     });
 
     return sourceRows.sort((left, right) => {
+        if (left.draft !== right.draft) return left.draft ? -1 : 1;
         const ratingDifference = Number(right.rate || 0) - Number(left.rate || 0);
         if (ratingDifference) return ratingDifference;
         return 0;
@@ -128,8 +145,7 @@ export default function StrategiesPage() {
       return;
     }
 
-    const createdAt = new Date().toISOString();
-    const title = `Untitled strategy ${createdAt}`;
+    const title = createInternalStrategyTitle();
     const { data, error: insertError } = await supabase
       .from("strategies")
       .insert({
@@ -256,11 +272,6 @@ export default function StrategiesPage() {
 
     const strategyField = strategyFieldFromRowField(field);
     const nextValue = field === "strategy" ? value.trim() : value;
-    if (field === "strategy" && !nextValue) {
-      setError("Strategy title cannot be empty");
-      refresh();
-      return;
-    }
 
     const { error: updateError } = await supabase
       .from("strategies")
@@ -273,6 +284,15 @@ export default function StrategiesPage() {
     }
 
     invalidateDataCache("strategies", "counts");
+  }
+
+  function scheduleSaveSourceField(row: MatrixRow, field: keyof Pick<MatrixRow, "strategy" | "process" | "channels" | "output">, value: string) {
+    const key = `${row.id}:${field}`;
+    if (saveTimersRef.current[key]) clearTimeout(saveTimersRef.current[key]);
+    saveTimersRef.current[key] = setTimeout(() => {
+      void saveSourceField(row, field, value);
+      delete saveTimersRef.current[key];
+    }, 500);
   }
 
   async function deleteRow(row: MatrixRow) {
@@ -365,42 +385,45 @@ export default function StrategiesPage() {
                           selected={row.businessModelIds ?? idsFromTitles(row.businessModel, models)}
                           onChange={(modelIds) => updateSourceRowModels(row, modelIds)}
                         />
-	                      ) : field === "stage" ? (
-	                        <Select
-	                          aria-label={`Stage ${row.strategy || "strategy row"}`}
-	                          className="h-9 w-full border-0 bg-transparent px-3 text-sm focus:border-0 focus:ring-0"
-	                          value={row.stage}
-	                          onChange={(event) => updateSourceStage(row, event.target.value)}
-	                        >
-	                          <option value="">Select stage</option>
-	                          {stageOptions.map((option) => (
-	                            <option key={option} value={option}>
-	                              {option}
-	                            </option>
-	                          ))}
-	                        </Select>
-	                      ) : field === "rate" ? (
-	                        <Select
-	                          aria-label={`Rate ${row.strategy}`}
-	                          className="h-9 w-14 border-0 bg-transparent px-0 text-center focus:border-0 focus:ring-0"
-	                          value={row.rate || "0"}
-	                          onChange={(event) => updateSourceRate(row, event.target.value)}
-	                        >
-	                          {ratingOptions.map((option) => (
-	                            <option key={option} value={option}>
-	                              {option}
-	                            </option>
-	                          ))}
-	                        </Select>
-	                      ) : (
-	                        <textarea
-	                          aria-label={tableHeadings[rowFields.indexOf(field)]}
-	                          className={`block min-h-20 w-full resize-none overflow-hidden bg-white px-3 py-2 text-sm leading-5 text-zinc-800 outline-none transition focus:bg-zinc-50 ${field === "channels" ? "text-center" : ""}`}
-	                          ref={resizeTextarea}
+                      ) : field === "stage" ? (
+                        <Select
+                          aria-label={`Stage ${row.strategy || "strategy row"}`}
+                          className="h-9 w-full border-0 bg-transparent px-3 text-sm focus:border-0 focus:ring-0"
+                          value={row.stage}
+                          onChange={(event) => updateSourceStage(row, event.target.value)}
+                        >
+                          <option value="">Select stage</option>
+                          {stageOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </Select>
+                      ) : field === "rate" ? (
+                        <Select
+                          aria-label={`Rate ${row.strategy}`}
+                          className="h-9 w-14 border-0 bg-transparent px-0 text-center focus:border-0 focus:ring-0"
+                          value={row.rate || "0"}
+                          onChange={(event) => updateSourceRate(row, event.target.value)}
+                        >
+                          {ratingOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </Select>
+                      ) : (
+                        <textarea
+                          aria-label={tableHeadings[rowFields.indexOf(field)]}
+                          className={`block min-h-20 w-full resize-none overflow-hidden bg-white px-3 py-2 text-sm leading-5 text-zinc-800 outline-none transition focus:bg-zinc-50 ${field === "channels" ? "text-center" : ""}`}
+                          ref={resizeTextarea}
                           rows={2}
                           value={row[field]}
                           onInput={(event) => resizeTextarea(event.currentTarget)}
-                          onChange={(event) => updateSourceFieldLocal(row, field, event.target.value)}
+                          onChange={(event) => {
+                            updateSourceFieldLocal(row, field, event.target.value);
+                            scheduleSaveSourceField(row, field, event.target.value);
+                          }}
                           onBlur={(event) => saveSourceField(row, field, event.target.value)}
                         />
 	                      )}
@@ -444,7 +467,7 @@ function rateFromEvidence(value: string | null) {
 
 function strategyFieldFromRowField(field: keyof Pick<MatrixRow, "strategy" | "process" | "channels" | "output">) {
   const fieldMap = {
-    strategy: "title",
+    strategy: "landmark_example",
     process: "key_variables",
     channels: "channel_mechanism",
     output: "primary_metric",
@@ -464,4 +487,13 @@ function idsFromTitles(value: string, models: BusinessModel[]) {
   return models
     .filter((model) => selectedTitles.includes(model.title))
     .map((model) => model.id);
+}
+
+function createInternalStrategyTitle() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return `strategy:${crypto.randomUUID()}`;
+  return `strategy:${Date.now()}`;
+}
+
+function isInternalStrategyTitle(value: string) {
+  return value.startsWith("strategy:");
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { HandCoins, MessageCircleMore, Repeat2, Search, Share2 } from "lucide-react";
 import { getCachedData, invalidateDataCache, listFunnelNotes } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
@@ -58,6 +58,7 @@ const stages: FunnelStage[] = [
 export default function FunnelPage() {
   const [notes, setNotes] = useState<Record<FunnelStage["id"], string>>(() => notesFromRows(getCachedData<FunnelNote[]>("funnelNotes") ?? []));
   const [error, setError] = useState("");
+  const saveTimersRef = useRef<Partial<Record<FunnelStage["id"], ReturnType<typeof setTimeout>>>>({});
 
   useEffect(() => {
     loadNotes();
@@ -82,6 +83,7 @@ export default function FunnelPage() {
   function updateStage(stageId: FunnelStage["id"], value: string) {
     const nextNotes = { ...notes, [stageId]: value };
     setNotes(nextNotes);
+    scheduleSaveStage(stageId, value);
   }
 
   async function saveStage(stageId: FunnelStage["id"], value: string) {
@@ -97,6 +99,14 @@ export default function FunnelPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save funnel note");
     }
+  }
+
+  function scheduleSaveStage(stageId: FunnelStage["id"], value: string) {
+    if (saveTimersRef.current[stageId]) clearTimeout(saveTimersRef.current[stageId]);
+    saveTimersRef.current[stageId] = setTimeout(() => {
+      void saveStage(stageId, value);
+      delete saveTimersRef.current[stageId];
+    }, 500);
   }
 
   return (

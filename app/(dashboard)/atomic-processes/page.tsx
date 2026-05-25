@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Heart, Plus, Search, Trash2 } from "lucide-react";
 import { getCachedData, invalidateDataCache, listAtomicProcesses, listBusinessModels, relationTitles } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
@@ -48,6 +48,7 @@ export default function AtomicProcessesPage() {
   const [stageOverrides, setStageOverrides] = useState<Record<string, string>>({});
   const [freshProcessIds, setFreshProcessIds] = useState<string[]>([]);
   const [error, setError] = useState("");
+  const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   async function refresh() {
     try {
@@ -248,6 +249,15 @@ export default function AtomicProcessesPage() {
     invalidateDataCache("atomicProcesses");
   }
 
+  function scheduleSaveSourceText(processId: string, field: "productBrief" | "input" | "action" | "output", value: string) {
+    const key = `${processId}:${field}`;
+    if (saveTimersRef.current[key]) clearTimeout(saveTimersRef.current[key]);
+    saveTimersRef.current[key] = setTimeout(() => {
+      void saveSourceText(processId, field, value);
+      delete saveTimersRef.current[key];
+    }, 500);
+  }
+
   async function updateSourceRowModels(row: AtomicTableRow, modelIds: string[]) {
     if (!row.processId || !supabase) return;
 
@@ -434,7 +444,11 @@ export default function AtomicProcessesPage() {
                       <GrowingTextarea
                         value={row.productBrief}
                         label="Product brief"
-                        onChange={(value) => row.processId ? updateSourceText(row.processId, "productBrief", value) : undefined}
+                        onChange={(value) => {
+                          if (!row.processId) return;
+                          updateSourceText(row.processId, "productBrief", value);
+                          scheduleSaveSourceText(row.processId, "productBrief", value);
+                        }}
                         onBlur={(value) => row.processId ? saveSourceText(row.processId, "productBrief", value) : undefined}
                       />
                     )}
@@ -494,7 +508,11 @@ export default function AtomicProcessesPage() {
                       <GrowingTextarea
                         value={row.input}
                         label="Input"
-                        onChange={(value) => row.processId ? updateSourceText(row.processId, "input", value) : undefined}
+                        onChange={(value) => {
+                          if (!row.processId) return;
+                          updateSourceText(row.processId, "input", value);
+                          scheduleSaveSourceText(row.processId, "input", value);
+                        }}
                         onBlur={(value) => row.processId ? saveSourceText(row.processId, "input", value) : undefined}
                       />
                     )}
@@ -506,7 +524,11 @@ export default function AtomicProcessesPage() {
                       <GrowingTextarea
                         value={row.action}
                         label="Action"
-                        onChange={(value) => row.processId ? updateSourceText(row.processId, "action", value) : undefined}
+                        onChange={(value) => {
+                          if (!row.processId) return;
+                          updateSourceText(row.processId, "action", value);
+                          scheduleSaveSourceText(row.processId, "action", value);
+                        }}
                         onBlur={(value) => row.processId ? saveSourceText(row.processId, "action", value) : undefined}
                       />
                     )}
@@ -518,7 +540,11 @@ export default function AtomicProcessesPage() {
                       <GrowingTextarea
                         value={row.output}
                         label="Output"
-                        onChange={(value) => row.processId ? updateSourceText(row.processId, "output", value) : undefined}
+                        onChange={(value) => {
+                          if (!row.processId) return;
+                          updateSourceText(row.processId, "output", value);
+                          scheduleSaveSourceText(row.processId, "output", value);
+                        }}
                         onBlur={(value) => row.processId ? saveSourceText(row.processId, "output", value) : undefined}
                       />
                     )}
