@@ -36,6 +36,7 @@ const stageOptions = [
   "lead gen",
   "lead nurturing",
   "deal close",
+  "partnership",
 ];
 const rowFields: Array<keyof Pick<MatrixRow, "businessModel" | "strategy" | "process" | "channels" | "output" | "stage" | "rate">> = [
   "businessModel",
