@@ -37,6 +37,16 @@ create table if not exists assessment_boxes (
   created_at timestamptz not null default now()
 );
 
+create table if not exists problems_boxes (
+  id uuid primary key default gen_random_uuid(),
+  box_key text not null unique,
+  heading text not null,
+  content text not null default '',
+  sort_order integer not null default 0,
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
 create table if not exists business_models (
   id uuid primary key default gen_random_uuid(),
   title text not null unique,
@@ -136,6 +146,7 @@ alter table research_sources enable row level security;
 alter table distribution_channels enable row level security;
 alter table funnel_notes enable row level security;
 alter table assessment_boxes enable row level security;
+alter table problems_boxes enable row level security;
 alter table business_models enable row level security;
 alter table business_model_types enable row level security;
 alter table strategies enable row level security;
@@ -178,6 +189,14 @@ with check (true);
 drop policy if exists "public full access" on assessment_boxes;
 create policy "public full access"
 on assessment_boxes
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists "public full access" on problems_boxes;
+create policy "public full access"
+on problems_boxes
 for all
 to anon, authenticated
 using (true)

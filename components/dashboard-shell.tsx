@@ -9,6 +9,7 @@ const tabs = [
   { href: "/", label: "Overview" },
   { href: "/business-models", label: "Business Models" },
   { href: "/assessment", label: "Assessment" },
+  { href: "/problems", label: "Problems" },
   { href: "/funnel", label: "Funnel" },
   { href: "/strategies", label: "Strategies" },
   { href: "/atomic-processes", label: "Atomic Processes" },
