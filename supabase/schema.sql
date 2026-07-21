@@ -137,6 +137,12 @@ create table if not exists atomic_process_business_models (
   unique (atomic_process_id, business_model_id)
 );
 
+create table if not exists heartbeat_messages (
+  id text primary key,
+  message text not null default 'hi',
+  sent_at timestamptz not null default now()
+);
+
 grant usage on schema public to anon, authenticated;
 grant all on all tables in schema public to anon, authenticated;
 grant all on all sequences in schema public to anon, authenticated;
@@ -153,6 +159,7 @@ alter table strategies enable row level security;
 alter table strategy_business_models enable row level security;
 alter table atomic_processes enable row level security;
 alter table atomic_process_business_models enable row level security;
+alter table heartbeat_messages enable row level security;
 
 drop policy if exists "public full access" on overview_subproblems;
 create policy "public full access"
@@ -245,6 +252,14 @@ with check (true);
 drop policy if exists "public full access" on atomic_process_business_models;
 create policy "public full access"
 on atomic_process_business_models
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists "public full access" on heartbeat_messages;
+create policy "public full access"
+on heartbeat_messages
 for all
 to anon, authenticated
 using (true)
